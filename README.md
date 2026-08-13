@@ -1,54 +1,71 @@
 # ovpn-dash
 
-Web panel for an **already installed** OpenVPN server. One Go binary embeds the Vue dashboard.
+[English](README.md) · [Русский](README.ru.md)
 
-## Run
+Web panel for an **already installed** OpenVPN server. It does not install OpenVPN.
+
+Linux amd64 / arm64. Listens on `127.0.0.1:7474` only — put Caddy or nginx in front.
+
+## 1. OpenVPN
+
+You need a working server with a CA (`ca.crt` + `ca.key`) and `server.conf`. If you do not have one yet:
 
 ```bash
-make init
-make run          # 127.0.0.1:7474
+sudo apt update
+sudo apt install -y openvpn easy-rsa
 ```
 
-Open `http://127.0.0.1:7474/dashboard/`. First run: localhost or `?setup_token=` from `setup.token` in the data dir.
+Then set up PKI and `server.conf` as usual (easy-rsa, `openvpn-install.sh`, etc.). The panel does not do that.
 
-Does not install OpenVPN. Wizard asks for PKI dir, `server.conf`, systemd unit, public host.
+For the client map, add to `server.conf`:
 
-## Install
+```
+status /var/log/openvpn/status.log
+```
 
-`install.sh` lives in git (`scripts/install.sh`) and is published as a GitHub Release asset. Always take it from **latest**:
+For revoke to take effect, add `crl-verify` pointing at the CRL. For a TLS key in `.ovpn`, use `tls-crypt` or `tls-auth`.
+
+## 2. Panel
 
 ```bash
 curl -fsSL https://github.com/mosimosi228/ovpn-dash/releases/latest/download/install.sh | sudo sh
 sudo systemctl start ovpn-dash
 ```
 
-The script downloads the matching `ovpn-dash_<tag>_linux_<arch>.tar.gz` from the same release (binary + `README.md` + `install.sh` from that git tag).
+Open `http://127.0.0.1:7474/dashboard/` **from this machine**. First run: admin login and host paths. Later the same fields are on the **Settings** tab.
 
-Put Caddy/nginx in front. See `deployments/`. Do not expose `:7474` to the internet.
+| Field | Example |
+| --- | --- |
+| PKI directory | `/etc/openvpn/easy-rsa/pki` |
+| server.conf | `/etc/openvpn/server/server.conf` |
+| Systemd unit | `openvpn-server@server` |
+| Log file | `/var/log/openvpn/server.log` |
+| Public address for .ovpn | `vpn.example.com` |
 
-## Release
+Other common paths: `server.conf` → `/etc/openvpn/server.conf`, unit → `openvpn@server`, CA key → `pki/private/ca.key` or `pki/ca.key`.
 
-Commit `README.md` and `scripts/install.sh`, tag that commit, then build and publish:
+If the wizard is not opened from localhost, pass the token from `/etc/ovpn-dash/setup.token`:
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0          # SSH, including Host mmvs-github.com
-make release VERSION=v0.1.0
-make publish VERSION=v0.1.0     # GitHub API via gh (github.com, not the SSH alias)
+`http://127.0.0.1:7474/dashboard/?setup_token=…`
+
+## 3. Proxy
+
+Do not expose port `7474` to the internet. Caddy example:
+
+```
+vpn.example.com {
+    reverse_proxy 127.0.0.1:7474
+}
 ```
 
-`git push` uses `origin` as-is. `gh` always talks to `github.com` even if the remote is `git@mmvs-github.com:…`. Log in once with the same account as that SSH key:
+Samples: `deployments/caddy/Caddyfile`, `deployments/nginx/ovpn-dash.conf`.
+
+## Commands
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
-gh auth login -h github.com -p ssh -w
+sudo systemctl status ovpn-dash
+sudo journalctl -u ovpn-dash -f
+sudo ovpn-dash uninstall          # remove the unit
 ```
 
-That uploads, from git:
-
-- `install.sh` → https://github.com/mosimosi228/ovpn-dash/releases/latest/download/install.sh
-- `README.md` → …/download/README.md
-- `ovpn-dash_<tag>_linux_amd64.tar.gz` / `…_arm64.tar.gz` (binary + README.md + install.sh)
-- `SHA256SUMS`
-
-Linux amd64/arm64 only. SQLCipher requires CGO. Do not mark the release as prerelease, or `latest` will not point at it.
+Panel data: `/etc/ovpn-dash`.

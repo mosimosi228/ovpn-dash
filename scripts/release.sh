@@ -79,6 +79,7 @@ publish_release() {
     exit 1
   }
   set -- "${OUT}/SHA256SUMS" "${OUT}/install.sh" "${OUT}/README.md"
+  [ -f "${OUT}/README.ru.md" ] && set -- "$@" "${OUT}/README.ru.md"
   for a in "${OUT}"/ovpn-dash_"${VERSION}"_*.tar.gz; do
     [ -f "$a" ] || continue
     set -- "$@" "$a"
@@ -115,6 +116,7 @@ echo "→ building SPA"
 fi && npm run build)
 
 [ -f README.md ] || { echo "error: README.md missing (must be in git)" >&2; exit 1; }
+[ -f README.ru.md ] || { echo "error: README.ru.md missing (must be in git)" >&2; exit 1; }
 [ -f scripts/install.sh ] || { echo "error: scripts/install.sh missing (must be in git)" >&2; exit 1; }
 
 mkdir -p "$OUT"
@@ -156,13 +158,14 @@ build_one() {
   fi
 
   cp -f README.md "${dir}/README.md"
+  cp -f README.ru.md "${dir}/README.ru.md"
   cp -f scripts/install.sh "${dir}/install.sh"
   chmod 0755 "${dir}/install.sh"
 
   asset="ovpn-dash_${VERSION}_${t}.tar.gz"
   (
     cd "$dir"
-    tar -czf "${OLDPWD}/${OUT}/${asset}" ovpn-dash README.md install.sh
+    tar -czf "${OLDPWD}/${OUT}/${asset}" ovpn-dash README.md README.ru.md install.sh
   )
   rm -rf "$dir"
   echo "  ${OUT}/${asset}"
@@ -186,10 +189,12 @@ done
 cp -f scripts/install.sh "${OUT}/install.sh"
 chmod 0755 "${OUT}/install.sh"
 cp -f README.md "${OUT}/README.md"
+cp -f README.ru.md "${OUT}/README.ru.md"
 mkdir -p releases
 cp -f scripts/install.sh releases/install.sh
 chmod 0755 releases/install.sh
 cp -f README.md releases/README.md
+cp -f README.ru.md releases/README.ru.md
 printf '%s\n' "$VERSION" > releases/LATEST
 
 (
