@@ -1,0 +1,19 @@
+[Unit]
+Description=ovpn-dash OpenVPN panel
+Documentation=https://github.com/mosimosi228/ovpn-dash
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=__BIN__ serve --dir __DIR__ --listen 127.0.0.1:7474
+WorkingDirectory=__DIR__
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

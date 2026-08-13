@@ -1,0 +1,15 @@
+/bin/
+/dist/
+/releases/
+/tmp/
+*.exe
+coverage.out
+/web/node_modules/
+/web/dist/assets/
+.idea/
+.vscode/
+*.swp
+data.key
+setup.token
+settings.db
+ovpn-dash-data/

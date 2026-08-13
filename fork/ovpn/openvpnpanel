@@ -1,0 +1,74 @@
+#!/bin/bash
+
+function main()
+{
+    if [[ $EUID -ne 0 ]]; then
+       >&2 echo "OpenVPNPanel: Must be run as root in order to interact with OpenVPN Server." 
+       exit 1
+    fi
+
+    GOBACK=$PWD
+    OWNDIR="${0%/*}"
+    cd "${0%/*}"
+
+    if [[ "$1" == "--start" ]]; then
+        echo "Stopping OpenVPN Server..."
+        kill -9 `pidof openvpn`
+        echo "Stopping any existing OpenVPNPanel instances..."
+        for p in `screen -ls | grep PanelOpenVPN | awk '{print $1}' | cut -d. -f1`; do kill -9 $p; done;
+        screen -wipe
+
+        PORT=`read_config 'port' 'server'`
+        HOST=`read_config 'host' 'server'`
+        OVPN=`read_config 'ovpn' 'server'`
+
+        echo "Initialized OpenVPN with config '$OVPN'..."
+        screen -A -m -d -S ServerOpenVPN ./bin/ovpn $OVPN
+        echo "OpenVPN Running (Screen ServerOpenVPN)."
+
+        echo "Starting OpenVPNPanel Server..."
+        screen -A -m -d -S PanelOpenVPN ./bin/daemon $HOST $PORT
+        echo "Server running on $HOST:$PORT (Screen PanelOpenVPN)."
+
+    elif [[ "$1" == "--stop" ]]; then
+        echo "Stopping OpenVPN Server..."
+        kill -9 `pidof openvpn`
+        echo "Stopping any existing OpenVPNPanel instances..."
+        for p in `screen -ls | grep PanelOpenVPN | awk '{print $1}' | cut -d. -f1`; do kill -9 $p; done;
+        screen -wipe
+
+        echo "Stopped."
+    elif [[ "$1" == "--status" ]]; then
+        if [[ "`screen -ls | grep PanelOpenVPN | wc -l`" == "1" ]]; then
+            echo "OpenVPNPanel: Running"
+        else
+            echo "OpenVPNPanel: Not Running"
+        fi
+    elif [[ "$1" == "--adduser" ]]; then
+        php ./bin/users.php -add $2 $3
+    elif [[ "$1" == "--deleteuser" ]]; then
+        php ./bin/users.php -delete $2
+    else
+        echo "Usage: $0 [option]"
+        echo "Options:"
+        echo ""
+        echo "  Server Control"
+        echo "    --start    Starts the OpenVPN Panel and OpenVPN server using $OWNDIR/config/server.ini"
+        echo "    --stop     Stops the OpenVPN Panel and OpenVPN server."
+        echo "    --status   Gets the status of OpenVPNPanel"
+        echo ""
+        echo "  User Management"
+        echo "    --adduser       [username] [password]    Creates a new user using the specified username and password."
+        echo "    --deleteuser    [username]               Deletes the user associated with this username."
+        echo ""
+    fi
+
+    cd $GOBACK
+}
+
+function read_config()
+{
+    echo $(awk -F "=" '/'$1'/ {print $2}' ./config/$2.ini) | tr -d ' ' 
+}
+
+main $@

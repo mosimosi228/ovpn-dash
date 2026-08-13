@@ -1,0 +1,7 @@
+:7474 {
+	bind 127.0.0.1
+}
+
+vpn.example.com {
+	reverse_proxy 127.0.0.1:7474
+}

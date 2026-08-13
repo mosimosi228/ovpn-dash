@@ -1,0 +1,97 @@
+@import 'tailwindcss';
+
+@plugin "daisyui" {
+  themes: dark --default;
+  root: ":root";
+  logs: false;
+}
+
+@plugin "daisyui/theme" {
+  name: "dark";
+  default: true;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: #05080c;
+  --color-base-200: #0a1018;
+  --color-base-300: #121a24;
+  --color-base-content: #c5d0dc;
+  --color-primary: #14b8a6;
+  --color-primary-content: #042f2e;
+  --color-secondary: #0e7490;
+  --color-secondary-content: #e0f2fe;
+  --color-accent: #22d3ee;
+  --color-accent-content: #082f49;
+  --color-neutral: #0a0e14;
+  --color-neutral-content: #e2e8f0;
+  --color-info: oklch(68% 0.169 237.323);
+  --color-info-content: oklch(97% 0.013 236.62);
+  --color-success: oklch(69% 0.17 162.48);
+  --color-success-content: oklch(97% 0.021 166.113);
+  --color-warning: oklch(76% 0.188 70.08);
+  --color-warning-content: oklch(98% 0.022 95.277);
+  --color-error: oklch(64% 0.246 16.439);
+  --color-error-content: oklch(96% 0.015 12.422);
+  --radius-selector: 0.25rem;
+  --radius-field: 0.15rem;
+  --radius-box: 0.25rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+@theme {
+  --font-sans: 'Manrope', system-ui, sans-serif;
+  --font-display: 'Syne', 'Manrope', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+html,
+body,
+#app {
+  @apply h-full overflow-x-hidden;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+  background-color: #05080c;
+  background-image:
+    radial-gradient(720px 420px at 12% -8%, rgba(20, 184, 166, 0.14), transparent 58%),
+    radial-gradient(520px 340px at 90% 0%, rgba(34, 211, 238, 0.08), transparent 55%),
+    linear-gradient(180deg, #070c12 0%, #05080c 45%);
+  background-attachment: fixed;
+}
+
+html[data-theme='dark'] body,
+html[data-theme='dark'] #app {
+  background: transparent !important;
+}
+
+html[data-theme='dark'] .ovpn-grid {
+  opacity: 0.09 !important;
+  background-image:
+    linear-gradient(to right, rgba(20, 184, 166, 0.5) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(20, 184, 166, 0.35) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.input-field {
+  @apply px-4 py-2.5 bg-base-200 rounded-md text-base-content
+    placeholder:text-base-content/50 outline-none
+    focus:border-primary/50 focus:ring-1 focus:ring-primary/30
+    transition-colors w-full;
+  border: 1px solid color-mix(in srgb, var(--color-base-content) 10%, transparent);
+}

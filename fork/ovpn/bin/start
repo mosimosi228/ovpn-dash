@@ -1,0 +1,17 @@
+#!/bin/bash
+
+
+sudo systemctl start openvpn-server@server.service
+#sudo /bin/bash /etc/openvpn/server.up.d/firewall-up.sh
+
+
+#function read_config()
+#{
+#    echo $(awk -F "=" '/'$1'/ {print $2}' ./config/$2.ini) | tr -d ' ' 
+#}
+
+#for p in `screen -ls | grep ServerOpenVPN | awk '{print $1}' | cut -d. -f1`; do kill -9 $p; done;
+#screen -wipe
+
+#OVPN=`read_config 'ovpn' 'server'`
+#screen -A -m -d -S ServerOpenVPN ./bin/ovpn $OVPN
