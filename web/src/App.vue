@@ -36,9 +36,9 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="relative min-h-full flex flex-col">
+  <div class="relative min-h-dvh flex flex-col">
     <GridPattern />
-    <div class="relative z-10 min-h-full flex flex-col">
+    <div class="relative z-10 flex flex-1 flex-col min-h-dvh">
       <AppHeader />
       <FlashHost />
       <main class="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">

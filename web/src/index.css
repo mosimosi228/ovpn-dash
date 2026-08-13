@@ -50,7 +50,7 @@
 html,
 body,
 #app {
-  @apply h-full overflow-x-hidden;
+  @apply min-h-dvh overflow-x-hidden;
 }
 
 body {
