@@ -31,6 +31,8 @@ const connections = ref<Connection[]>([])
 const mapHint = ref('')
 const newName = ref('')
 const logText = ref('')
+const logHint = ref('')
+const logSource = ref('')
 const err = ref('')
 const busy = ref(false)
 
@@ -52,9 +54,16 @@ async function loadConnections() {
 async function loadLog() {
   try {
     const l = await fetchLog()
-    logText.value = l.text
-  } catch {
+    logText.value = l.text || ''
+    logHint.value = l.hint || ''
+    logSource.value = l.source || ''
+  } catch (e: unknown) {
     logText.value = ''
+    logSource.value = ''
+    logHint.value =
+      e && typeof e === 'object' && 'response' in e
+        ? (e as { response?: { data?: { error?: string } } }).response?.data?.error || 'error'
+        : 'error'
   }
 }
 
@@ -256,7 +265,11 @@ function onSettingsSaved(next: Partial<SetupState>) {
         <button class="btn btn-ghost btn-sm ml-auto" @click="loadLog">{{ t('log.refresh') }}</button>
       </div>
       <pre v-if="logText" class="font-mono text-xs whitespace-pre-wrap bg-base-300/60 p-4 rounded-box max-h-[28rem] overflow-auto">{{ logText }}</pre>
+      <p v-else-if="logHint === 'unset'" class="text-base-content/50 text-sm">{{ t('log.empty') }}</p>
+      <p v-else-if="logHint === 'missing'" class="text-base-content/50 text-sm">{{ t('log.missing') }}</p>
+      <p v-else-if="logHint" class="text-warning text-sm">{{ logHint }}</p>
       <p v-else class="text-base-content/50 text-sm">{{ t('log.empty') }}</p>
+      <p v-if="logSource === 'journal'" class="text-xs text-base-content/40 mt-2">{{ t('log.journal') }}</p>
     </section>
   </div>
 </template>

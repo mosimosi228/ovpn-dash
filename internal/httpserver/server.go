@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/mosimosi228/ovpn-dash/internal/ovpn"
 	"github.com/mosimosi228/ovpn-dash/internal/systemd"
@@ -58,22 +59,55 @@ func (h *Handler) serverStop(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) serverLog(w http.ResponseWriter, r *http.Request) {
 	s := h.loadSettings(r)
-	if s.LogFile == "" {
-		writeError(w, http.StatusBadRequest, "log file is not configured")
-		return
-	}
 	n := 200
 	if q := r.URL.Query().Get("lines"); q != "" {
 		if v, err := strconv.Atoi(q); err == nil && v > 0 && v <= 2000 {
 			n = v
 		}
 	}
-	text, err := tailFile(s.LogFile, n)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
+	path := strings.TrimSpace(s.LogFile)
+	if path == "" {
+		if cfg, err := ovpn.ParseFile(s.ServerConf); err == nil {
+			path = cfg.LogFile
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"path": s.LogFile, "text": text})
+
+	if path != "" {
+		text, err := tailFile(path, n)
+		if err == nil {
+			writeJSON(w, http.StatusOK, map[string]any{"path": path, "text": text, "source": "file"})
+			return
+		}
+		if !os.IsNotExist(err) {
+			if j, jerr := systemd.UnitLog(s.Unit, n); jerr == nil && j != "" {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"path": path, "text": j, "source": "journal", "hint": err.Error(),
+				})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"path": path, "text": "", "source": "file", "hint": err.Error(),
+			})
+			return
+		}
+	}
+
+	if s.Unit != "" {
+		if j, err := systemd.UnitLog(s.Unit, n); err == nil && j != "" {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"path": s.Unit, "text": j, "source": "journal",
+			})
+			return
+		}
+	}
+
+	hint := "missing"
+	if path == "" && s.LogFile == "" {
+		hint = "unset"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"path": path, "text": "", "source": "", "hint": hint,
+	})
 }
 
 func tailFile(path string, lines int) (string, error) {

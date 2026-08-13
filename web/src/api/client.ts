@@ -149,7 +149,7 @@ export async function stopServer(): Promise<ServerStatus> {
   return data
 }
 
-export async function fetchLog(): Promise<{ path: string; text: string }> {
+export async function fetchLog(): Promise<{ path: string; text: string; source?: string; hint?: string }> {
   const { data } = await api.get('/server/log')
   return data
 }

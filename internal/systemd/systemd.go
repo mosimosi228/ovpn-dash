@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -87,4 +88,29 @@ func ReloadOrRestart(unit string) error {
 	}
 	_, err := run("restart", unit)
 	return err
+}
+
+// UnitLog returns recent journal lines for the unit (empty if journalctl is unavailable).
+func UnitLog(unit string, lines int) (string, error) {
+	if err := ValidateUnit(unit); err != nil {
+		return "", err
+	}
+	if lines < 1 {
+		lines = 200
+	}
+	if lines > 2000 {
+		lines = 2000
+	}
+	cmd := exec.Command("journalctl", "-u", unit, "-n", strconv.Itoa(lines), "--no-pager", "-o", "short-iso")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return "", fmt.Errorf("journalctl: %s", msg)
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }

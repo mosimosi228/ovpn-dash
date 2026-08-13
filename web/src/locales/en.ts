@@ -72,7 +72,9 @@ export default {
   },
   log: {
     title: 'Server log',
-    empty: 'Log file was not set in the wizard',
+    empty: 'No log file set — add it in Settings or a log directive in server.conf',
+    missing: 'Log file not found and journald is empty. Check the path in Settings.',
+    journal: 'Showing the systemd journal (log file missing or unreadable).',
     refresh: 'Refresh',
   },
   me: {

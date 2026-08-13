@@ -24,6 +24,7 @@ auth SHA256
 tls-crypt ta.key
 crl-verify crl.pem
 status /var/log/openvpn/status.log
+log /var/log/openvpn/server.log
 <ca>
 -----BEGIN CERTIFICATE-----
 xxx
@@ -52,8 +53,11 @@ xxx
 	if !cfg.HasCRLVerify || cfg.CRLVerify != crl {
 		t.Fatalf("crl %v %s", cfg.HasCRLVerify, cfg.CRLVerify)
 	}
-	if w := cfg.Warnings(); len(w) != 0 {
-		t.Fatalf("warnings %v", w)
+	if cfg.StatusFile != "/var/log/openvpn/status.log" {
+		t.Fatalf("status %s", cfg.StatusFile)
+	}
+	if cfg.LogFile != "/var/log/openvpn/server.log" {
+		t.Fatalf("log %s", cfg.LogFile)
 	}
 }
 

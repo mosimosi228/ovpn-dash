@@ -306,6 +306,44 @@ func TestPatchSettings(t *testing.T) {
 	}
 }
 
+func TestServerLogNoFileIsOK(t *testing.T) {
+	h, dir := newTestHandler(t)
+	srv := httptest.NewServer(h.Routes())
+	t.Cleanup(srv.Close)
+	token, _, _ := setupAndToken(t, srv, dir)
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/server/log", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("missing log must be 200, got %d %s", res.StatusCode, raw)
+	}
+
+	logPath := filepath.Join(dir, "openvpn.log")
+	if err := os.WriteFile(logPath, []byte("hello\nworld\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest(http.MethodGet, srv.URL+"/api/v1/server/log", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("log file: %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "world") {
+		t.Fatalf("want log body, got %s", raw)
+	}
+}
+
 func TestNoRegister(t *testing.T) {
 	h, _ := newTestHandler(t)
 	srv := httptest.NewServer(h.Routes())

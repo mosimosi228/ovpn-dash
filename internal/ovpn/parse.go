@@ -19,6 +19,7 @@ type Config struct {
 	TLSAuthDir   int
 	CRLVerify    string
 	StatusFile   string
+	LogFile      string
 	Dev          string
 	HasTLSCrypt  bool
 	HasTLSAuth   bool
@@ -102,6 +103,10 @@ func ParseFile(path string) (*Config, error) {
 			cfg.HasCRLVerify = cfg.CRLVerify != ""
 		case "status":
 			cfg.StatusFile = resolve(dir, firstArg(val))
+		case "log", "log-append":
+			if p := firstArg(val); p != "" {
+				cfg.LogFile = resolve(dir, p)
+			}
 		}
 	}
 	if err := sc.Err(); err != nil {
