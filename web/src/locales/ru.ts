@@ -1,5 +1,9 @@
 export default {
   app: { title: 'ovpn-dash', subtitle: 'панель OpenVPN' },
+  footer: {
+    desc: 'Панель для уже установленного OpenVPN. Порт 7474 наружу не открывайте.',
+    listen: '127.0.0.1:7474',
+  },
   lang: { ru: 'RU', en: 'EN' },
   boot: {
     loading: 'Загрузка…',
@@ -59,6 +63,7 @@ export default {
     confirm: 'Отозвать и удалить {name}?',
     empty: 'Клиентов пока нет',
     placeholder: 'имя клиента',
+    error: 'Не удалось создать клиента',
   },
   map: {
     title: 'Откуда заходят',

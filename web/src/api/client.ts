@@ -1,4 +1,5 @@
-import axios from 'axios'
+import axios, { type AxiosInstance } from 'axios'
+import { errorFromAxios, flash } from '@/lib/flash'
 
 const SETUP_TOKEN_KEY = 'ovpn_setup_token'
 const ACCESS_KEY = 'ovpn_access'
@@ -40,6 +41,24 @@ export function clearTokens() {
   localStorage.removeItem(REFRESH_KEY)
 }
 
+function shouldFlash(err: { config?: { url?: string } }): boolean {
+  const url = err.config?.url || ''
+  if (url.includes('/dashboard/api/state') || url === '/state' || url.endsWith('/api/state')) return false
+  return true
+}
+
+function wireFlash(client: AxiosInstance) {
+  client.interceptors.response.use(
+    (r) => r,
+    async (err) => {
+      if (shouldFlash(err)) {
+        flash('error', await errorFromAxios(err))
+      }
+      return Promise.reject(err)
+    },
+  )
+}
+
 export const dash = axios.create({
   baseURL: '/dashboard/api',
   headers: { Accept: 'application/json' },
@@ -49,6 +68,7 @@ dash.interceptors.request.use((config) => {
   if (setupToken) config.headers.set('X-Setup-Token', setupToken)
   return config
 })
+wireFlash(dash)
 
 export const api = axios.create({
   baseURL: '/api/v1',
@@ -78,9 +98,22 @@ api.interceptors.response.use(
         clearTokens()
       }
     }
+    if (shouldFlash(err)) {
+      flash('error', await errorFromAxios(err))
+    }
     return Promise.reject(err)
   },
 )
+
+export async function login(username: string, password: string) {
+  try {
+    const { data } = await axios.post('/auth/login', { username, password })
+    setTokens(data.access_token, data.refresh_token)
+  } catch (e) {
+    flash('error', await errorFromAxios(e))
+    throw e
+  }
+}
 
 export type SetupState = {
   complete: boolean
@@ -127,11 +160,6 @@ export async function fetchState(): Promise<SetupState> {
 export async function postSetup(body: Record<string, unknown>): Promise<SetupState> {
   const { data } = await dash.post<SetupState>('/setup', body)
   return data
-}
-
-export async function login(username: string, password: string) {
-  const { data } = await axios.post('/auth/login', { username, password })
-  setTokens(data.access_token, data.refresh_token)
 }
 
 export async function fetchServer(): Promise<ServerStatus> {

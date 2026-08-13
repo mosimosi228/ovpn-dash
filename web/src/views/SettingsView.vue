@@ -2,6 +2,7 @@
 import { reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { patchSettings, type SetupState } from '@/api/client'
+import { flash } from '@/lib/flash'
 
 const props = defineProps<{ state: SetupState }>()
 const emit = defineEmits<{ 'update:state': [Partial<SetupState>] }>()
@@ -16,8 +17,6 @@ const form = reactive({
 })
 const currentPassword = ref('')
 const newPassword = ref('')
-const err = ref('')
-const msg = ref('')
 const busy = ref(false)
 
 function fill() {
@@ -31,8 +30,6 @@ function fill() {
 watch(() => props.state, fill, { immediate: true, deep: true })
 
 async function save() {
-  err.value = ''
-  msg.value = ''
   busy.value = true
   try {
     const body: Record<string, string> = { ...form }
@@ -44,13 +41,9 @@ async function save() {
     emit('update:state', next)
     currentPassword.value = ''
     newPassword.value = ''
-    msg.value = t('settings.saved')
-  } catch (e: unknown) {
-    const m =
-      e && typeof e === 'object' && 'response' in e
-        ? (e as { response?: { data?: { error?: string } } }).response?.data?.error
-        : ''
-    err.value = m || t('settings.error')
+    flash('success', t('settings.saved'))
+  } catch {
+    /* flashed */
   } finally {
     busy.value = false
   }
@@ -80,8 +73,6 @@ async function save() {
       <label class="text-xs uppercase tracking-wide text-base-content/50">{{ t('me.password') }}</label>
       <input v-model="newPassword" class="input-field" type="password" minlength="8" autocomplete="new-password" />
 
-      <p v-if="err" class="text-error text-sm">{{ err }}</p>
-      <p v-else-if="msg" class="text-success text-sm">{{ msg }}</p>
       <button class="btn btn-primary btn-sm w-fit mt-2" type="submit" :disabled="busy">{{ t('settings.save') }}</button>
     </form>
   </section>

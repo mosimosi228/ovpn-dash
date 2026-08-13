@@ -3,6 +3,8 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fetchState, getAccessToken, setupToken, type SetupState } from '@/api/client'
 import AppHeader from '@/components/AppHeader.vue'
+import AppFooter from '@/components/AppFooter.vue'
+import FlashHost from '@/components/FlashHost.vue'
 import GridPattern from '@/components/GridPattern.vue'
 import WizardView from '@/views/WizardView.vue'
 import LoginView from '@/views/LoginView.vue'
@@ -38,6 +40,7 @@ onMounted(async () => {
     <GridPattern />
     <div class="relative z-10 min-h-full flex flex-col">
       <AppHeader />
+      <FlashHost />
       <main class="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
         <div v-if="loading" class="text-sm text-base-content/60 font-mono">{{ t('boot.loading') }}</div>
         <div v-else-if="bootError" class="rounded-box border border-error/30 bg-error/5 p-6">
@@ -48,6 +51,7 @@ onMounted(async () => {
         <LoginView v-else-if="state && !authed" @done="authed = true" />
         <ConsoleView v-else-if="state" :state="state" @update:state="Object.assign(state, $event)" />
       </main>
+      <AppFooter />
     </div>
   </div>
 </template>

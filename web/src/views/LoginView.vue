@@ -7,17 +7,15 @@ const emit = defineEmits<{ done: [] }>()
 const { t } = useI18n()
 const username = ref('admin')
 const password = ref('')
-const err = ref('')
 const busy = ref(false)
 
 async function submit() {
-  err.value = ''
   busy.value = true
   try {
     await login(username.value, password.value)
     emit('done')
   } catch {
-    err.value = t('login.error')
+    /* flashed */
   } finally {
     busy.value = false
   }
@@ -32,7 +30,6 @@ async function submit() {
       <input v-model="username" class="input-field" required />
       <label class="text-xs uppercase tracking-wide text-base-content/50">{{ t('login.password') }}</label>
       <input v-model="password" class="input-field" type="password" required />
-      <p v-if="err" class="text-error text-sm">{{ err }}</p>
       <button class="btn btn-primary mt-2" type="submit" :disabled="busy">{{ t('login.submit') }}</button>
     </form>
   </section>

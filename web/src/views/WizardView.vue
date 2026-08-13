@@ -16,21 +16,15 @@ const form = reactive({
   log_file: '/var/log/openvpn/server.log',
   public_host: '',
 })
-const err = ref('')
 const busy = ref(false)
 
 async function submit() {
-  err.value = ''
   busy.value = true
   try {
     const next = await postSetup({ ...form })
     emit('update:state', next)
-  } catch (e: unknown) {
-    const msg =
-      e && typeof e === 'object' && 'response' in e
-        ? (e as { response?: { data?: { error?: string } } }).response?.data?.error
-        : ''
-    err.value = msg || t('wizard.error')
+  } catch {
+    /* flashed */
   } finally {
     busy.value = false
   }
@@ -56,7 +50,6 @@ async function submit() {
       <input v-model="form.log_file" class="input-field font-mono text-sm" />
       <label class="text-xs uppercase tracking-wide text-base-content/50">{{ t('wizard.host') }}</label>
       <input v-model="form.public_host" class="input-field" required placeholder="vpn.example.com" />
-      <p v-if="err" class="text-error text-sm">{{ err }}</p>
       <button class="btn btn-primary mt-2" type="submit" :disabled="busy">{{ t('wizard.submit') }}</button>
     </form>
     <p v-if="props.state.has_admin" class="hidden">{{ props.state.admin_user }}</p>

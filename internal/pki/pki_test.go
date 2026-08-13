@@ -18,6 +18,11 @@ import (
 
 func writeTestCA(t *testing.T, dir string) {
 	t.Helper()
+	writeTestCAUsage(t, dir, x509.KeyUsageCertSign|x509.KeyUsageCRLSign|x509.KeyUsageDigitalSignature)
+}
+
+func writeTestCAUsage(t *testing.T, dir string, usage x509.KeyUsage) {
+	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +32,7 @@ func writeTestCA(t *testing.T, dir string) {
 		Subject:               pkix.Name{CommonName: "Easy-RSA CA"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
+		KeyUsage:              usage,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
@@ -110,10 +115,50 @@ func TestValidateName(t *testing.T) {
 	if err := ValidateName("ok_client-1"); err != nil {
 		t.Fatal(err)
 	}
+	if err := ValidateName("Иван_Петров"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateName("клиент-1"); err != nil {
+		t.Fatal(err)
+	}
 	if err := ValidateName("../etc"); err == nil {
 		t.Fatal("expected error")
 	}
 	if err := ValidateName("ca"); err == nil {
 		t.Fatal("expected error")
+	}
+	if err := ValidateName("a/b"); err == nil {
+		t.Fatal("slash")
+	}
+}
+
+func TestRevokeWithoutCRLSignBit(t *testing.T) {
+	dir := t.TempDir()
+	writeTestCAUsage(t, dir, x509.KeyUsageCertSign|x509.KeyUsageDigitalSignature)
+	s := &Store{Dir: dir}
+	if err := s.Issue("bob"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Revoke("bob"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "crl.pem")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIssueCyrillic(t *testing.T) {
+	dir := t.TempDir()
+	writeTestCA(t, dir)
+	s := &Store{Dir: dir}
+	if err := s.Issue("Сергей"); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Name != "Сергей" {
+		t.Fatalf("list %+v", list)
 	}
 }

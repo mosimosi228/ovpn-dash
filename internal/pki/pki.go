@@ -15,9 +15,12 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mosimosi228/ovpn-dash/internal/ovpn"
 )
@@ -52,19 +55,30 @@ func (s *Store) crlPath() string    { return filepath.Join(s.Dir, "crl.pem") }
 
 func ValidateName(name string) error {
 	name = strings.TrimSpace(name)
-	if name == "" || name == "ca" {
+	if name == "" || strings.EqualFold(name, "ca") || name == "." || name == ".." || strings.EqualFold(name, "UNDEF") {
 		return fmt.Errorf("invalid client name")
 	}
-	if len(name) > 64 {
+	if path.Base(name) != name || strings.ContainsAny(name, `/\`) {
+		return fmt.Errorf("invalid client name")
+	}
+	if utf8.RuneCountInString(name) > 64 {
 		return fmt.Errorf("client name too long")
 	}
 	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '_' || r == '-' {
 			continue
 		}
-		return fmt.Errorf("client name must be [A-Za-z0-9._-]")
+		return fmt.Errorf("client name must be letters, digits, dot, underscore or hyphen")
 	}
 	return nil
+}
+
+// caForCRL copies the CA so Go will sign a CRL even if the on-disk cert
+// omitted KeyUsageCRLSign (common with older easy-rsa / openvpn-install CAs).
+func caForCRL(ca *x509.Certificate) *x509.Certificate {
+	c := *ca
+	c.KeyUsage |= x509.KeyUsageCRLSign
+	return &c
 }
 
 func (s *Store) loadCA() (*x509.Certificate, crypto.Signer, error) {
@@ -265,6 +279,7 @@ func subjectKeyID(pub crypto.PublicKey) ([]byte, error) {
 
 // Issue creates a client cert/key signed by the existing CA.
 func (s *Store) Issue(name string) error {
+	name = strings.TrimSpace(name)
 	if err := ValidateName(name); err != nil {
 		return err
 	}
@@ -345,6 +360,7 @@ func (s *Store) loadExistingCRL(ca *x509.Certificate) []x509.RevocationListEntry
 
 // Revoke adds the client cert to the CRL and removes its key/cert files.
 func (s *Store) Revoke(name string) error {
+	name = strings.TrimSpace(name)
 	if err := ValidateName(name); err != nil {
 		return err
 	}
@@ -382,7 +398,7 @@ func (s *Store) Revoke(name string) error {
 		NextUpdate:                time.Now().Add(10 * 365 * 24 * time.Hour),
 		RevokedCertificateEntries: entries,
 	}
-	der, err := x509.CreateRevocationList(rand.Reader, rl, ca, caKey)
+	der, err := x509.CreateRevocationList(rand.Reader, rl, caForCRL(ca), caKey)
 	if err != nil {
 		return fmt.Errorf("crl: %w", err)
 	}
@@ -398,6 +414,7 @@ func (s *Store) Revoke(name string) error {
 
 // Profile builds an inline .ovpn for name.
 func (s *Store) Profile(name, publicHost string, cfg *ovpn.Config) ([]byte, error) {
+	name = strings.TrimSpace(name)
 	if err := ValidateName(name); err != nil {
 		return nil, err
 	}

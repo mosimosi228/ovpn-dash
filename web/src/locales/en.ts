@@ -1,5 +1,9 @@
 export default {
   app: { title: 'ovpn-dash', subtitle: 'OpenVPN panel' },
+  footer: {
+    desc: 'A panel for an already installed OpenVPN server. Do not expose port 7474.',
+    listen: '127.0.0.1:7474',
+  },
   lang: { ru: 'RU', en: 'EN' },
   boot: {
     loading: 'Loading…',
@@ -59,6 +63,7 @@ export default {
     confirm: 'Revoke and delete {name}?',
     empty: 'No clients yet',
     placeholder: 'client name',
+    error: 'Could not create client',
   },
   map: {
     title: 'Where they connect from',

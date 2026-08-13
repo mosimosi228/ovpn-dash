@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mosimosi228/ovpn-dash/internal/ovpn"
@@ -36,6 +37,7 @@ func (h *Handler) createClient(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
+	req.Name = strings.TrimSpace(req.Name)
 	if err := h.store(r).Issue(req.Name); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -57,9 +59,24 @@ func (h *Handler) downloadOVPN(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-openvpn-profile")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.ovpn"`)
+	w.Header().Set("Content-Disposition", ovpnDisposition(name))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
+}
+
+func ovpnDisposition(name string) string {
+	star := "UTF-8''" + url.PathEscape(name) + ".ovpn"
+	ascii := true
+	for _, r := range name {
+		if r < 0x20 || r > 0x7e || r == '"' {
+			ascii = false
+			break
+		}
+	}
+	if ascii {
+		return `attachment; filename="` + name + `.ovpn"; filename*=` + star
+	}
+	return `attachment; filename="client.ovpn"; filename*=` + star
 }
 
 func (h *Handler) deleteClient(w http.ResponseWriter, r *http.Request) {

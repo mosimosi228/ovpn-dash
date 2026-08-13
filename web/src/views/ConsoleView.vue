@@ -33,7 +33,6 @@ const newName = ref('')
 const logText = ref('')
 const logHint = ref('')
 const logSource = ref('')
-const err = ref('')
 const busy = ref(false)
 
 async function loadServer() {
@@ -71,8 +70,8 @@ onMounted(async () => {
   try {
     await loadServer()
     await loadClients()
-  } catch (e: unknown) {
-    err.value = e instanceof Error ? e.message : 'error'
+  } catch {
+    /* flashed */
   }
 })
 
@@ -80,6 +79,8 @@ async function onStart() {
   busy.value = true
   try {
     server.value = await startServer()
+  } catch {
+    /* flashed */
   } finally {
     busy.value = false
   }
@@ -88,20 +89,30 @@ async function onStop() {
   busy.value = true
   try {
     server.value = await stopServer()
+  } catch {
+    /* flashed */
   } finally {
     busy.value = false
   }
 }
 async function onCreate() {
   if (!newName.value.trim()) return
-  await createClient(newName.value.trim())
-  newName.value = ''
-  await loadClients()
+  try {
+    await createClient(newName.value.trim())
+    newName.value = ''
+    await loadClients()
+  } catch {
+    /* flashed */
+  }
 }
 async function onRevoke(name: string) {
   if (!confirm(t('clients.confirm', { name }))) return
-  await revokeClient(name)
-  await loadClients()
+  try {
+    await revokeClient(name)
+    await loadClients()
+  } catch {
+    /* flashed */
+  }
 }
 function fmtBytes(n: number) {
   if (!n) return '0'
@@ -160,8 +171,6 @@ function onSettingsSaved(next: Partial<SetupState>) {
       </button>
       <button class="btn btn-ghost btn-sm ml-auto" type="button" @click="logout">{{ t('nav.logout') }}</button>
     </div>
-
-    <p v-if="err" class="text-error text-sm">{{ err }}</p>
 
     <section v-if="tab === 'server'" class="rounded-box border border-base-content/10 bg-base-200/40 p-6">
       <div class="flex items-center gap-3 mb-4">
