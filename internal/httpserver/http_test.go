@@ -174,6 +174,138 @@ func TestSetupGateAndLogin(t *testing.T) {
 	}
 }
 
+func setupAndToken(t *testing.T, srv *httptest.Server, dir string) (token, pkiDir, conf string) {
+	t.Helper()
+	tokb, _ := os.ReadFile(filepath.Join(dir, "setup.token"))
+	tok := string(bytes.TrimSpace(tokb))
+	pkiDir, conf = writeMiniPKI(t, dir)
+	setupBody, _ := json.Marshal(map[string]string{
+		"username":    "admin",
+		"password":    "password1",
+		"pki_dir":     pkiDir,
+		"server_conf": conf,
+		"unit":        "openvpn-server@server",
+		"log_file":    filepath.Join(dir, "openvpn.log"),
+		"public_host": "vpn.example.com",
+	})
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/dashboard/api/setup", bytes.NewReader(setupBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Setup-Token", tok)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("setup: %d %s", res.StatusCode, body)
+	}
+	loginBody, _ := json.Marshal(map[string]string{"username": "admin", "password": "password1"})
+	res, err = http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(loginBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tokens struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&tokens); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if tokens.AccessToken == "" {
+		t.Fatal("no token")
+	}
+	return tokens.AccessToken, pkiDir, conf
+}
+
+func TestPatchSettings(t *testing.T) {
+	h, dir := newTestHandler(t)
+	srv := httptest.NewServer(h.Routes())
+	t.Cleanup(srv.Close)
+	token, _, _ := setupAndToken(t, srv, dir)
+
+	pki2, conf2 := writeMiniPKI(t, filepath.Join(dir, "alt"))
+	body, _ := json.Marshal(map[string]string{
+		"pki_dir":     pki2,
+		"server_conf": conf2,
+		"unit":        "openvpn@server",
+		"log_file":    filepath.Join(dir, "other.log"),
+		"public_host": "vpn.other.example",
+	})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/v1/settings", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("patch settings: %d %s", res.StatusCode, raw)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["public_host"] != "vpn.other.example" {
+		t.Fatalf("host %v", got["public_host"])
+	}
+	if got["unit"] != "openvpn@server" {
+		t.Fatalf("unit %v", got["unit"])
+	}
+
+	bad, _ := json.Marshal(map[string]string{
+		"pki_dir":          pki2,
+		"server_conf":      conf2,
+		"unit":             "openvpn@server",
+		"public_host":      "vpn.other.example",
+		"current_password": "wrong",
+		"password":         "newpassword",
+	})
+	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/api/v1/settings", bytes.NewReader(bad))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad current password: %d", res.StatusCode)
+	}
+
+	okpw, _ := json.Marshal(map[string]string{
+		"pki_dir":          pki2,
+		"server_conf":      conf2,
+		"unit":             "openvpn@server",
+		"public_host":      "vpn.other.example",
+		"current_password": "password1",
+		"password":         "newpassword",
+	})
+	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/api/v1/settings", bytes.NewReader(okpw))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("password patch: %d", res.StatusCode)
+	}
+
+	loginBody, _ := json.Marshal(map[string]string{"username": "admin", "password": "newpassword"})
+	res, err = http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(loginBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("login with new password: %d", res.StatusCode)
+	}
+}
+
 func TestNoRegister(t *testing.T) {
 	h, _ := newTestHandler(t)
 	srv := httptest.NewServer(h.Routes())

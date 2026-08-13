@@ -45,11 +45,23 @@ parse_args() {
   done
 }
 
+auth_header() {
+  tok="${GH_TOKEN:-${GITHUB_TOKEN:-${OVPNDASH_GITHUB_TOKEN:-}}}"
+  if [ -n "$tok" ]; then
+    printf '%s' "Authorization: Bearer ${tok}"
+  fi
+}
+
 download() {
   url=$1
   out=$2
+  hdr=$(auth_header)
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$out"
+    if [ -n "$hdr" ]; then
+      curl -fsSL -H "$hdr" "$url" -o "$out"
+    else
+      curl -fsSL "$url" -o "$out"
+    fi
   elif command -v wget >/dev/null 2>&1; then
     wget -qO "$out" "$url"
   else
@@ -57,6 +69,7 @@ download() {
   fi
 }
 
+# Resolve "latest" via github.com Location — not api.github.com (unauthenticated API is often 403).
 resolve_version() {
   if [ "$VERSION" != "latest" ]; then
     case "$VERSION" in
@@ -66,8 +79,15 @@ resolve_version() {
     return 0
   fi
   need_cmd curl
-  VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
-  [ -n "$VERSION" ] || die "could not resolve latest release for ${REPO}"
+  hdr=$(auth_header)
+  if [ -n "$hdr" ]; then
+    loc=$(curl -fsSI -H "$hdr" "https://github.com/${REPO}/releases/latest")
+  else
+    loc=$(curl -fsSI "https://github.com/${REPO}/releases/latest")
+  fi
+  VERSION=$(printf '%s' "$loc" | tr -d '\r' | awk 'tolower($1)=="location:" {print $2; exit}')
+  VERSION=$(printf '%s' "$VERSION" | sed -n 's#.*/releases/tag/##p')
+  [ -n "$VERSION" ] || die "could not resolve latest release for ${REPO} (github.com redirect had no tag)"
   log "latest → ${VERSION}"
 }
 

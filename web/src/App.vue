@@ -46,7 +46,7 @@ onMounted(async () => {
         </div>
         <WizardView v-else-if="state && !state.complete" :state="state" @update:state="state = $event" />
         <LoginView v-else-if="state && !authed" @done="authed = true" />
-        <ConsoleView v-else-if="state" :state="state" />
+        <ConsoleView v-else-if="state" :state="state" @update:state="Object.assign(state, $event)" />
       </main>
     </div>
   </div>

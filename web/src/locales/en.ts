@@ -32,6 +32,7 @@ export default {
     clients: 'Clients',
     map: 'Map',
     log: 'Log',
+    settings: 'Settings',
     logout: 'Log out',
   },
   server: {
@@ -78,5 +79,14 @@ export default {
     password: 'New password',
     current: 'Current password',
     save: 'Change password',
+  },
+  settings: {
+    title: 'Settings',
+    lead: 'Host paths and admin password. Change them here after the first-run wizard.',
+    password: 'Password',
+    passwordHint: 'Leave blank if you are only updating paths.',
+    save: 'Save',
+    saved: 'Saved',
+    error: 'Could not save settings',
   },
 } as const

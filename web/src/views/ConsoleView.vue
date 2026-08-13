@@ -2,7 +2,6 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  api,
   clearTokens,
   createClient,
   downloadOvpn,
@@ -19,11 +18,13 @@ import {
   type SetupState,
 } from '@/api/client'
 import MapView from '@/views/MapView.vue'
+import SettingsView from '@/views/SettingsView.vue'
 
 const props = defineProps<{ state: SetupState }>()
+const emit = defineEmits<{ 'update:state': [Partial<SetupState>] }>()
 const { t } = useI18n()
 
-const tab = ref<'server' | 'clients' | 'map' | 'log'>('server')
+const tab = ref<'server' | 'clients' | 'map' | 'log' | 'settings'>('server')
 const server = ref<ServerStatus | null>(null)
 const clients = ref<Client[]>([])
 const connections = ref<Connection[]>([])
@@ -32,9 +33,6 @@ const newName = ref('')
 const logText = ref('')
 const err = ref('')
 const busy = ref(false)
-const currentPassword = ref('')
-const newPassword = ref('')
-const pwMsg = ref('')
 
 async function loadServer() {
   server.value = await fetchServer()
@@ -113,20 +111,9 @@ function logout() {
   location.reload()
 }
 
-async function onPassword() {
-  pwMsg.value = ''
-  try {
-    await api.patch('/me', { current_password: currentPassword.value, password: newPassword.value })
-    currentPassword.value = ''
-    newPassword.value = ''
-    pwMsg.value = 'ok'
-  } catch (e: unknown) {
-    const msg =
-      e && typeof e === 'object' && 'response' in e
-        ? (e as { response?: { data?: { error?: string } } }).response?.data?.error
-        : ''
-    pwMsg.value = msg || 'error'
-  }
+function onSettingsSaved(next: Partial<SetupState>) {
+  emit('update:state', next)
+  loadServer().catch(() => {})
 }
 </script>
 
@@ -159,6 +146,9 @@ async function onPassword() {
       >
         {{ t('nav.log') }}
       </button>
+      <button class="btn btn-sm" :class="tab === 'settings' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'settings'">
+        {{ t('nav.settings') }}
+      </button>
       <button class="btn btn-ghost btn-sm ml-auto" type="button" @click="logout">{{ t('nav.logout') }}</button>
     </div>
 
@@ -188,14 +178,6 @@ async function onPassword() {
         <button class="btn btn-success btn-sm" :disabled="busy || server?.active" @click="onStart">{{ t('server.start') }}</button>
         <button class="btn btn-error btn-sm" :disabled="busy || !server?.active" @click="onStop">{{ t('server.stop') }}</button>
       </div>
-      <form class="mt-6 flex flex-col gap-2 max-w-sm" @submit.prevent="onPassword">
-        <label class="text-xs uppercase tracking-wide text-base-content/50">{{ t('me.current') }}</label>
-        <input v-model="currentPassword" class="input-field" type="password" />
-        <label class="text-xs uppercase tracking-wide text-base-content/50">{{ t('me.password') }}</label>
-        <input v-model="newPassword" class="input-field" type="password" minlength="8" />
-        <button class="btn btn-ghost btn-sm w-fit" type="submit">{{ t('me.save') }}</button>
-        <p v-if="pwMsg" class="text-xs text-base-content/60">{{ pwMsg }}</p>
-      </form>
     </section>
 
     <section v-if="tab === 'clients'" class="rounded-box border border-base-content/10 bg-base-200/40 p-6">
@@ -265,6 +247,8 @@ async function onPassword() {
         </tbody>
       </table>
     </section>
+
+    <SettingsView v-if="tab === 'settings'" :state="props.state" @update:state="onSettingsSaved" />
 
     <section v-if="tab === 'log'" class="rounded-box border border-base-content/10 bg-base-200/40 p-6">
       <div class="flex items-center mb-4">

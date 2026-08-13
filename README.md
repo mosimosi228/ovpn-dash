@@ -28,12 +28,20 @@ Put Caddy/nginx in front. See `deployments/`. Do not expose `:7474` to the inter
 
 ## Release
 
-Commit `README.md` and `scripts/install.sh`, tag that commit, then build and publish once:
+Commit `README.md` and `scripts/install.sh`, tag that commit, then build and publish:
 
 ```bash
 git tag v0.1.0
-git push origin v0.1.0
-GH_PUBLISH=1 make release VERSION=v0.1.0
+git push origin v0.1.0          # SSH, including Host mmvs-github.com
+make release VERSION=v0.1.0
+make publish VERSION=v0.1.0     # GitHub API via gh (github.com, not the SSH alias)
+```
+
+`git push` uses `origin` as-is. `gh` always talks to `github.com` even if the remote is `git@mmvs-github.com:…`. Log in once with the same account as that SSH key:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+gh auth login -h github.com -p ssh -w
 ```
 
 That uploads, from git:

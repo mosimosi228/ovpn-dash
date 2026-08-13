@@ -197,3 +197,13 @@ export async function downloadOvpn(name: string) {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+export async function fetchSettings(): Promise<SetupState> {
+  const { data } = await api.get<SetupState>('/settings')
+  return data
+}
+
+export async function patchSettings(body: Record<string, string>): Promise<SetupState> {
+  const { data } = await api.patch<SetupState>('/settings', body)
+  return data
+}

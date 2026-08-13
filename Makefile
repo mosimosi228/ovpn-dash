@@ -8,7 +8,7 @@ VERSION  ?=
 GOFLAGS  ?=
 LDFLAGS  ?= -s -w -X main.version=$(if $(VERSION),$(VERSION),dev)
 
-.PHONY: help web web-install build run init test vet coverage sqlc sqlc-clean sqlc-check serve release clean version
+.PHONY: help web web-install build run init test vet coverage sqlc sqlc-clean sqlc-check serve release publish clean version
 
 help: ## List commands
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  \033[36m%-24s\033[0m %s\n", "make "$$1, $$2}' $(MAKEFILE_LIST)
@@ -60,6 +60,10 @@ serve: build ## Serve --dir DIR
 release: ## Build releases/<VERSION>/ archives
 	@test -n "$(VERSION)" || { echo "usage: make release VERSION=vX.Y.Z" >&2; exit 2; }
 	./scripts/release.sh "$(VERSION)"
+
+publish: ## Upload releases/<VERSION>/ to GitHub (needs gh auth on github.com)
+	@test -n "$(VERSION)" || { echo "usage: make publish VERSION=vX.Y.Z" >&2; exit 2; }
+	./scripts/release.sh "$(VERSION)" --publish-only
 
 clean: ## Remove binary and coverage
 	rm -f "$(BIN)" coverage.out

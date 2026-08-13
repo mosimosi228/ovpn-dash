@@ -68,6 +68,8 @@ func (h *Handler) Routes() http.Handler {
 		r.Use(h.requireJWT)
 		r.Get("/me", h.me)
 		r.Patch("/me", h.patchMe)
+		r.Get("/settings", h.getSettings)
+		r.Patch("/settings", h.patchSettings)
 		r.Get("/server", h.serverStatus)
 		r.Post("/server/start", h.serverStart)
 		r.Post("/server/stop", h.serverStop)
