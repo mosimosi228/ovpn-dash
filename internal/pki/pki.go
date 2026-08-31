@@ -52,6 +52,8 @@ func (s *Store) caKeyPath() string {
 func (s *Store) issuedDir() string  { return filepath.Join(s.Dir, "issued") }
 func (s *Store) privateDir() string { return filepath.Join(s.Dir, "private") }
 func (s *Store) crlPath() string    { return filepath.Join(s.Dir, "crl.pem") }
+func (s *Store) indexPath() string  { return filepath.Join(s.Dir, "index.txt") }
+func (s *Store) serialPath() string { return filepath.Join(s.Dir, "serial") }
 
 func ValidateName(name string) error {
 	name = strings.TrimSpace(name)
@@ -71,6 +73,117 @@ func ValidateName(name string) error {
 		return fmt.Errorf("client name must be letters, digits, dot, underscore or hyphen")
 	}
 	return nil
+}
+
+// opensslTime — формат даты для index.txt: YYMMDDHHMMSSZ (UTC)
+func opensslTime(t time.Time) string {
+	return t.UTC().Format("060102150405Z")
+}
+
+// nextSerial читает pki/serial, возвращает следующий номер и записывает новый.
+// Если файла нет — стартует с 01 (как easy-rsa).
+func (s *Store) nextSerial() (*big.Int, error) {
+	serialPath := s.serialPath()
+	b, err := os.ReadFile(serialPath)
+	var cur *big.Int
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+		cur = big.NewInt(1)
+	} else {
+		s := strings.TrimSpace(string(b))
+		cur = new(big.Int)
+		if _, ok := cur.SetString(s, 16); !ok {
+			return nil, fmt.Errorf("invalid serial file: %q", s)
+		}
+	}
+	next := new(big.Int).Add(cur, big.NewInt(1))
+	hex := strings.ToUpper(next.Text(16))
+	if len(hex)%2 != 0 {
+		hex = "0" + hex
+	}
+	if err := os.WriteFile(serialPath, []byte(hex+"\n"), 0o644); err != nil {
+		return nil, err
+	}
+	return cur, nil
+}
+
+// appendIndexV добавляет строку V в index.txt
+func (s *Store) appendIndexV(cert *x509.Certificate) error {
+	serial := strings.ToUpper(cert.SerialNumber.Text(16))
+	if len(serial)%2 != 0 {
+		serial = "0" + serial
+	}
+	line := fmt.Sprintf("V\t%s\t\t%s\tunknown\t/CN=%s\n",
+		opensslTime(cert.NotAfter),
+		serial,
+		cert.Subject.CommonName,
+	)
+	f, err := os.OpenFile(s.indexPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(line)
+	return err
+}
+
+// markIndexR меняет V → R для данного serial
+func (s *Store) markIndexR(serial *big.Int) error {
+	indexPath := s.indexPath()
+	b, err := os.ReadFile(indexPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // нет index.txt — ничего не делаем
+		}
+		return err
+	}
+	want := strings.ToUpper(serial.Text(16))
+	if len(want)%2 != 0 {
+		want = "0" + want
+	}
+	lines := strings.Split(string(b), "\n")
+	changed := false
+	now := opensslTime(time.Now())
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		if len(parts) < 4 {
+			continue
+		}
+		ser := strings.ToUpper(strings.TrimSpace(parts[3]))
+		if ser != want {
+			continue
+		}
+		if parts[0] == "R" {
+			return nil // уже отозван
+		}
+		// V  expiry  <empty>  serial  unknown  /CN=...
+		// R  expiry  revokeTime  serial  unknown  /CN=...
+		parts[0] = "R"
+		if len(parts) == 5 {
+			// редко, но на всякий
+			parts = append(parts[:2], append([]string{now}, parts[2:]...)...)
+		} else {
+			parts[2] = now
+		}
+		lines[i] = strings.Join(parts, "\t")
+		changed = true
+		break
+	}
+	if !changed {
+		// сертификат выдан не через index.txt — можно дописать R-строку
+		// (опционально; пока просто выходим)
+		return nil
+	}
+	out := strings.Join(lines, "\n")
+	if !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	return os.WriteFile(indexPath, []byte(out), 0o644)
 }
 
 // caForCRL copies the CA so Go will sign a CRL even if the on-disk cert
@@ -232,6 +345,9 @@ func (s *Store) List() ([]Client, error) {
 		if cert.IsCA {
 			continue
 		}
+		if isProtectedCert(name, cert) {
+			continue
+		}
 		serial := cert.SerialNumber.Text(16)
 		_, hasKey := os.Stat(s.clientKeyPath(name))
 		clients = append(clients, Client{
@@ -244,6 +360,18 @@ func (s *Store) List() ([]Client, error) {
 		})
 	}
 	return clients, nil
+}
+
+func isProtectedCert(name string, cert *x509.Certificate) bool {
+	if strings.EqualFold(name, "server") || strings.EqualFold(name, "ca") {
+		return true
+	}
+	for _, eku := range cert.ExtKeyUsage {
+		if eku == x509.ExtKeyUsageServerAuth {
+			return true
+		}
+	}
+	return false
 }
 
 func generateClientKey(ca crypto.Signer) (crypto.Signer, error) {
@@ -294,7 +422,7 @@ func (s *Store) Issue(name string) error {
 	if err != nil {
 		return err
 	}
-	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	serial, err := s.nextSerial()
 	if err != nil {
 		return err
 	}
@@ -336,6 +464,9 @@ func (s *Store) Issue(name string) error {
 	if err := os.WriteFile(filepath.Join(s.privateDir(), name+".key"), keyPEM, 0o600); err != nil {
 		return err
 	}
+	if err := s.appendIndexV(cert); err != nil {
+		return fmt.Errorf("index.txt: %w", err)
+	}
 	return nil
 }
 
@@ -358,7 +489,8 @@ func (s *Store) loadExistingCRL(ca *x509.Certificate) []x509.RevocationListEntry
 	return crl.RevokedCertificateEntries
 }
 
-// Revoke adds the client cert to the CRL and removes its key/cert files.
+// Revoke adds the client cert to the CRL, marks it R in index.txt,
+// and removes the private key (cert file is kept, as in easy-rsa).
 func (s *Store) Revoke(name string) error {
 	name = strings.TrimSpace(name)
 	if err := ValidateName(name); err != nil {
@@ -376,6 +508,9 @@ func (s *Store) Revoke(name string) error {
 	cert, err := parseCertPEM(raw)
 	if err != nil {
 		return err
+	}
+	if isProtectedCert(name, cert) {
+		return fmt.Errorf("cannot revoke server/CA certificate %q", name)
 	}
 	entries := s.loadExistingCRL(ca)
 	already := false
@@ -406,7 +541,11 @@ func (s *Store) Revoke(name string) error {
 	if err := os.WriteFile(s.crlPath(), pemCRL, 0o644); err != nil {
 		return err
 	}
-	_ = os.Remove(crtPath)
+	if err := s.markIndexR(cert.SerialNumber); err != nil {
+		return fmt.Errorf("index.txt: %w", err)
+	}
+
+	//_ = os.Remove(crtPath)  не удалять .crt (easy-rsa так делает)
 	_ = os.Remove(s.clientKeyPath(name))
 	_ = os.Remove(filepath.Join(s.Dir, "reqs", name+".req"))
 	return nil
