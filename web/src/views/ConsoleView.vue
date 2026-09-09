@@ -264,10 +264,6 @@ function fmtBytes(n: number) {
   return `${v < 10 && i ? v.toFixed(1) : Math.round(v)} ${u[i]}`
 }
 
-function fmtTraffic(n: number) {
-  return `${n} (${fmtBytes(n)})`
-}
-
 function flagEmoji(cc?: string) {
   if (!cc || cc.length !== 2) return ''
   const u = cc.toUpperCase()
@@ -293,6 +289,20 @@ function timeOnline(c: Connection) {
   const s = sec % 60
   const clock = `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return days ? `${days}d ${clock}` : clock
+}
+
+function connFields(c: Connection) {
+  return [
+    { label: t('map.user'), value: c.name },
+    { label: t('map.vpn'), value: c.virtual_ip || '—' },
+    { label: t('map.remote'), value: c.real_ip || '—' },
+    { label: t('map.location'), value: locationText(c) },
+    { label: t('map.bytesIn'), value: fmtBytes(c.bytes_received) },
+    { label: t('map.bytesOut'), value: fmtBytes(c.bytes_sent) },
+    { label: t('map.since'), value: c.since || '—' },
+    { label: t('map.lastPing'), value: c.last_ref || '—' },
+    { label: t('map.online'), value: timeOnline(c) },
+  ]
 }
 
 function logout() {
@@ -326,7 +336,7 @@ async function onDisconnect(c: Connection) {
 </script>
 
 <template>
-  <div class="w-full max-w-6xl flex flex-col gap-5">
+  <div class="w-full max-w-6xl min-w-0 flex flex-col gap-5">
     <AppNav :tab="tab" :staff="staff" @update:tab="setTab" @logout="logout" />
       <section v-if="tab === 'server' && staff" class="panel">
         <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
@@ -480,36 +490,70 @@ async function onDisconnect(c: Connection) {
         <p v-if="mapHintText" class="text-warning text-sm mb-4">{{ mapHintText }}</p>
         <p v-else-if="!connections.length" class="text-base-content/50 text-sm mb-4">{{ t('map.empty') }}</p>
         <p v-if="!canKill" class="text-base-content/45 text-xs mb-4">{{ t('map.hintManage') }}</p>
-        <div v-if="connections.length" class="overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr>
-                <th>{{ t('map.user') }}</th>
-                <th>{{ t('map.vpn') }}</th>
-                <th>{{ t('map.remote') }}</th>
-                <th>{{ t('map.location') }}</th>
-                <th>{{ t('map.bytesIn') }}</th>
-                <th>{{ t('map.bytesOut') }}</th>
-                <th>{{ t('map.since') }}</th>
-                <th>{{ t('map.lastPing') }}</th>
-                <th>{{ t('map.online') }}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="c in connections" :key="c.name + c.real_address">
-                <td class="font-mono">{{ c.name }}</td>
-                <td class="font-mono text-xs">{{ c.virtual_ip || '—' }}</td>
-                <td class="font-mono text-xs">{{ c.real_ip }}</td>
-                <td class="text-xs whitespace-nowrap">{{ locationText(c) }}</td>
-                <td class="font-mono text-xs whitespace-nowrap">{{ fmtTraffic(c.bytes_received) }}</td>
-                <td class="font-mono text-xs whitespace-nowrap">{{ fmtTraffic(c.bytes_sent) }}</td>
-                <td class="font-mono text-xs whitespace-nowrap">{{ c.since || '—' }}</td>
-                <td class="font-mono text-xs whitespace-nowrap">{{ c.last_ref || '—' }}</td>
-                <td class="font-mono text-xs whitespace-nowrap">{{ timeOnline(c) }}</td>
-                <td class="text-right whitespace-nowrap">
+        <div v-if="connections.length" class="min-w-0">
+          <div class="max-md:hidden">
+            <table class="table table-xs conn-table">
+              <thead>
+                <tr>
+                  <th>{{ t('map.user') }}</th>
+                  <th>{{ t('map.vpn') }}</th>
+                  <th>{{ t('map.remote') }}</th>
+                  <th class="hidden lg:table-cell">{{ t('map.location') }}</th>
+                  <th>{{ t('map.bytesIn') }}</th>
+                  <th>{{ t('map.bytesOut') }}</th>
+                  <th class="hidden xl:table-cell">{{ t('map.since') }}</th>
+                  <th class="hidden xl:table-cell">{{ t('map.lastPing') }}</th>
+                  <th>{{ t('map.online') }}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="c in connections" :key="c.name + c.real_address">
+                  <td class="font-mono">{{ c.name }}</td>
+                  <td class="font-mono">{{ c.virtual_ip || '—' }}</td>
+                  <td class="font-mono">{{ c.real_ip }}</td>
+                  <td class="hidden lg:table-cell">{{ locationText(c) }}</td>
+                  <td class="font-mono">{{ fmtBytes(c.bytes_received) }}</td>
+                  <td class="font-mono">{{ fmtBytes(c.bytes_sent) }}</td>
+                  <td class="hidden xl:table-cell font-mono">{{ c.since || '—' }}</td>
+                  <td class="hidden xl:table-cell font-mono">{{ c.last_ref || '—' }}</td>
+                  <td class="font-mono">{{ timeOnline(c) }}</td>
+                  <td class="text-right">
+                    <button
+                      class="btn btn-ghost btn-xs gap-1 text-error"
+                      type="button"
+                      :disabled="!canKill"
+                      :title="canKill ? t('map.disconnect') : t('map.hintManage')"
+                      @click="onDisconnect(c)"
+                    >
+                      <XMarkIcon class="size-3.5" />
+                      <span class="hidden xl:inline">{{ t('map.disconnect') }}</span>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="md:hidden space-y-3">
+            <div
+              v-for="c in connections"
+              :key="c.name + c.real_address"
+              class="bg-base-200/60 backdrop-blur rounded-xl shadow-md border border-base-content/5 p-4"
+            >
+              <div class="divide-y divide-base-content/5 text-sm">
+                <div
+                  v-for="row in connFields(c)"
+                  :key="row.label"
+                  class="grid grid-cols-3 gap-3 py-2 first:pt-0 last:pb-0"
+                >
+                  <div class="text-[10px] uppercase tracking-wider text-base-content/50 font-semibold col-span-1 self-center min-w-0">
+                    <span class="truncate block">{{ row.label }}</span>
+                  </div>
+                  <div class="col-span-2 break-all font-mono text-xs">{{ row.value }}</div>
+                </div>
+                <div class="py-2 flex gap-2 flex-wrap">
                   <button
-                    class="btn btn-ghost btn-xs gap-1 text-error"
+                    class="btn btn-ghost btn-sm gap-1 text-error"
                     type="button"
                     :disabled="!canKill"
                     :title="canKill ? t('map.disconnect') : t('map.hintManage')"
@@ -518,10 +562,10 @@ async function onDisconnect(c: Connection) {
                     <XMarkIcon class="size-3.5" />
                     {{ t('map.disconnect') }}
                   </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

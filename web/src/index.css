@@ -223,6 +223,15 @@ select.input-field {
   appearance: auto;
 }
 
+.conn-table {
+  width: 100%;
+}
+.conn-table :where(th, td) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+}
+
 .page-shell {
   min-height: calc(100dvh - 3.5rem);
   width: 100%;
@@ -231,6 +240,7 @@ select.input-field {
   align-items: center;
   justify-content: center;
   padding: 1.5rem 1rem;
+  min-width: 0;
 }
 
 @media (min-width: 640px) {
