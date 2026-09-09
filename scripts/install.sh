@@ -129,6 +129,17 @@ parse_args "$@"
 [ "$(id -u)" -eq 0 ] || die "run as root"
 install_binary
 "${BIN_DIR}/ovpn-dash" install --no-start || true
-log "data dir: ${INSTALL_DIR}"
-log "start:    systemctl start ovpn-dash"
+log "data dir: ${INSTALL_DIR} (kept across upgrades)"
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  systemctl daemon-reload || true
+  if systemctl restart ovpn-dash; then
+    log "restarted ovpn-dash.service"
+  elif systemctl start ovpn-dash; then
+    log "started ovpn-dash.service"
+  else
+    log "could not restart ovpn-dash — run: systemctl start ovpn-dash"
+  fi
+else
+  log "start:    ${BIN_DIR}/ovpn-dash serve --dir ${INSTALL_DIR}"
+fi
 log "ui:       http://127.0.0.1:7474/dashboard/  (put Caddy/nginx in front)"

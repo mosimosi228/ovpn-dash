@@ -4,14 +4,18 @@ import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 const year = computed(() => new Date().getFullYear())
+const favicon = `${import.meta.env.BASE_URL}favicon.svg`
 </script>
 
 <template>
-  <footer class="relative mt-auto shrink-0 z-10 border-t border-primary/10 bg-base-300/30 backdrop-blur-xl">
+  <footer class="relative z-10 border-t border-primary/10 bg-base-300/30 backdrop-blur-xl">
     <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
     <div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row gap-3 items-center justify-between">
       <div class="text-center sm:text-left">
-        <div class="font-display text-sm text-base-content">{{ t('app.title') }}</div>
+        <div class="flex items-center justify-center sm:justify-start gap-2">
+          <img :src="favicon" alt="" class="size-5 rounded" width="20" height="20" />
+          <div class="font-display text-sm text-base-content">{{ t('app.title') }}</div>
+        </div>
         <p class="text-xs text-base-content/50 mt-1 max-w-md">{{ t('footer.desc') }}</p>
         <a
           class="inline-block text-xs font-mono text-primary/80 hover:text-primary mt-2"

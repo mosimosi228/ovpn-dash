@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mosimosi228/ovpn-dash/internal/settingsdb/sqlitedb"
+	"github.com/mosimosi228/ovpn-dash/internal/setup"
 	_ "github.com/mutecomm/go-sqlcipher/v4" // SQLCipher driver
 )
 
@@ -48,17 +49,55 @@ func Open(dir string) (*DB, error) {
 		_ = sqlDB.Close()
 		return nil, err
 	}
-	return &DB{SQL: sqlDB, Q: sqlitedb.New(sqlDB), Path: path}, nil
+	d := &DB{SQL: sqlDB, Q: sqlitedb.New(sqlDB), Path: path}
+	if err := d.MigrateAdminToRoot(context.Background()); err != nil {
+		_ = sqlDB.Close()
+		return nil, err
+	}
+	return d, nil
 }
 
 func migrate(db *sql.DB) error {
-	_, err := db.Exec(`
-CREATE TABLE IF NOT EXISTS kv (
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS kv (
   key   TEXT PRIMARY KEY NOT NULL,
   value TEXT NOT NULL
-);
-`)
-	return err
+);`,
+		`CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  pass_hash TEXT NOT NULL,
+  role TEXT NOT NULL,
+  client_name TEXT UNIQUE,
+  telegram_chat_id TEXT,
+  telegram_bind TEXT,
+  theme TEXT NOT NULL DEFAULT 'light',
+  map_style TEXT NOT NULL DEFAULT 'auto',
+  disabled INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);`,
+		`CREATE TABLE IF NOT EXISTS pin_challenges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  pin_hash TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);`,
+		`CREATE TABLE IF NOT EXISTS recovery_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  token_hash TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);`,
+	}
+	for _, s := range stmts {
+		if _, err := db.Exec(s); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func loadOrCreateKey(dir string) (string, error) {
@@ -119,4 +158,39 @@ func (d *DB) SetMeta(ctx context.Context, key, value string) error {
 		ctx = context.Background()
 	}
 	return d.Q.SetMeta(ctx, sqlitedb.SetMetaParams{Key: key, Value: value})
+}
+
+// MigrateAdminToRoot copies the v1 single admin_user into users as the only root.
+func (d *DB) MigrateAdminToRoot(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	n, err := d.Q.CountUsers(ctx)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	user, _ := d.GetMeta(ctx, setup.KeyAdminUser)
+	hash, _ := d.GetMeta(ctx, setup.KeyAdminPassHash)
+	if strings.TrimSpace(hash) == "" {
+		return nil
+	}
+	user = strings.TrimSpace(user)
+	if user == "" {
+		user = "admin"
+	}
+	publicHost, _ := d.GetMeta(ctx, setup.KeyPublicHost)
+	email := setup.LegacyRootEmail(user, publicHost)
+	u, err := d.InsertUser(ctx, User{
+		Email:    email,
+		Name:     user,
+		PassHash: hash,
+		Role:     setup.RoleRoot,
+		Theme:    setup.ThemeLight,
+		MapStyle: setup.MapAuto,
+	})
+	_ = u
+	return err
 }

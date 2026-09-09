@@ -105,10 +105,48 @@ api.interceptors.response.use(
   },
 )
 
-export async function login(username: string, password: string) {
+export async function login(email: string, password: string) {
   try {
-    const { data } = await axios.post('/auth/login', { username, password })
+    const { data } = await axios.post('/auth/login', { email, username: email, password })
     setTokens(data.access_token, data.refresh_token)
+  } catch (e) {
+    flash('error', await errorFromAxios(e))
+    throw e
+  }
+}
+
+export async function sendPIN(email: string): Promise<{ expires_at: number; ttl_sec: number }> {
+  try {
+    const { data } = await axios.post('/auth/login/pin', { email })
+    return data
+  } catch (e) {
+    flash('error', await errorFromAxios(e))
+    throw e
+  }
+}
+
+export async function verifyPIN(email: string, pin: string) {
+  try {
+    const { data } = await axios.post('/auth/login/pin/verify', { email, pin })
+    setTokens(data.access_token, data.refresh_token)
+  } catch (e) {
+    flash('error', await errorFromAxios(e))
+    throw e
+  }
+}
+
+export async function forgotPassword(email: string) {
+  try {
+    await axios.post('/auth/forgot', { email })
+  } catch (e) {
+    flash('error', await errorFromAxios(e))
+    throw e
+  }
+}
+
+export async function resetPassword(token: string, password: string) {
+  try {
+    await axios.post('/auth/reset', { token, password })
   } catch (e) {
     flash('error', await errorFromAxios(e))
     throw e
@@ -118,13 +156,22 @@ export async function login(username: string, password: string) {
 export type SetupState = {
   complete: boolean
   has_admin: boolean
-  admin_user?: string
   pki_dir?: string
   server_conf?: string
   unit?: string
   log_file?: string
   public_host?: string
   warnings?: string[]
+  smtp_configured?: boolean
+  telegram_configured?: boolean
+  telegram_bot_username?: string
+  smtp_host?: string
+  smtp_port?: string
+  smtp_user?: string
+  smtp_from?: string
+  smtp_tls?: boolean
+  smtp_pass_set?: boolean
+  telegram_token_set?: boolean
 }
 
 export type ServerStatus = {
@@ -138,6 +185,8 @@ export type ServerStatus = {
   port?: number
   proto?: string
   cipher?: string
+  network?: string
+  sessions?: number
   has_tls_crypt?: boolean
   has_tls_auth?: boolean
   has_crl_verify?: boolean
@@ -146,10 +195,75 @@ export type ServerStatus = {
 
 export type Client = {
   name: string
+  email?: string
+  user_id?: number
   not_after: string
   serial: string
   revoked: boolean
+  disabled?: boolean
   has_key: boolean
+}
+
+export type Me = {
+  id: number
+  email: string
+  name: string
+  role: 'root' | 'admin' | 'user'
+  client_name?: string
+  telegram_bound: boolean
+  telegram_bot_username?: string
+  theme: 'light' | 'dark'
+  map_style: 'auto' | 'light' | 'dark'
+  disabled: boolean
+}
+
+export type DashUser = Me & { created_at?: string }
+
+export async function fetchMe(): Promise<Me> {
+  const { data } = await api.get<Me>('/me')
+  return data
+}
+
+export async function patchMe(body: Record<string, string>): Promise<Me> {
+  const { data } = await api.patch<Me>('/me', body)
+  return data
+}
+
+export async function bindTelegram(): Promise<{ code: string; bot_username?: string; command: string }> {
+  const { data } = await api.post('/me/telegram/bind')
+  return data
+}
+
+export async function unbindTelegram(): Promise<Me> {
+  const { data } = await api.delete<Me>('/me/telegram')
+  return data
+}
+
+export async function downloadMyOvpn() {
+  const { data } = await api.get('/me/ovpn', { responseType: 'blob' })
+  const url = URL.createObjectURL(data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'client.ovpn'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function fetchUsers(): Promise<DashUser[]> {
+  const { data } = await api.get<{ items: DashUser[] }>('/users')
+  return data.items || []
+}
+
+export async function createUser(body: Record<string, string>) {
+  await api.post('/users', body)
+}
+
+export async function patchUser(id: number, body: Record<string, unknown>) {
+  await api.patch(`/users/${id}`, body)
+}
+
+export async function deleteUser(id: number) {
+  await api.delete(`/users/${id}`)
 }
 
 export async function fetchState(): Promise<SetupState> {
@@ -187,12 +301,17 @@ export async function fetchClients(): Promise<Client[]> {
   return data.items || []
 }
 
-export async function createClient(name: string) {
-  await api.post('/clients', { name })
+export async function createClient(body: { name: string; email: string; password: string; client_name?: string }) {
+  await api.post('/clients', body)
 }
 
 export async function revokeClient(name: string) {
   await api.delete(`/clients/${encodeURIComponent(name)}`)
+}
+
+export async function reissueClient(name: string): Promise<{ ok: boolean; name: string; reload_error?: string }> {
+  const { data } = await api.post(`/clients/${encodeURIComponent(name)}/reissue`)
+  return data
 }
 
 export type Connection = {
@@ -203,15 +322,80 @@ export type Connection = {
   bytes_received: number
   bytes_sent: number
   since?: string
+  since_unix?: number
+  last_ref?: string
   country?: string
+  country_code?: string
+  region?: string
   city?: string
   lat?: number
   lon?: number
 }
 
-export async function fetchConnections(): Promise<{ items: Connection[]; hint?: string; status_file?: string }> {
+export async function fetchConnections(): Promise<{
+  items: Connection[]
+  hint?: string
+  status_file?: string
+  can_kill?: boolean
+}> {
   const { data } = await api.get('/connections')
   return data
+}
+
+export async function killConnection(body: { name: string; real_address?: string }) {
+  await api.post('/connections/kill', body)
+}
+
+export function openConnectionsSocket(
+  onData: (data: { items: Connection[]; hint?: string; status_file?: string; can_kill?: boolean }) => void,
+): () => void {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const url = `${proto}//${location.host}/api/v1/connections/ws`
+  let ws: WebSocket | null = null
+  let closed = false
+  let retry = 0
+  let timer = 0
+
+  const connect = () => {
+    if (closed) return
+    ws = new WebSocket(url)
+    ws.onopen = () => {
+      retry = 0
+      ws?.send(JSON.stringify({ token: getAccessToken() }))
+    }
+    ws.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(String(ev.data)) as {
+          error?: string
+          items?: Connection[]
+          hint?: string
+          status_file?: string
+          can_kill?: boolean
+        }
+        if (data.error) {
+          closed = true
+          ws?.close()
+          return
+        }
+        onData({ items: data.items || [], hint: data.hint, status_file: data.status_file, can_kill: data.can_kill })
+      } catch {
+        /* ignore */
+      }
+    }
+    ws.onclose = () => {
+      if (closed) return
+      const delay = Math.min(8000, 400 * 2 ** retry)
+      retry += 1
+      timer = window.setTimeout(connect, delay)
+    }
+  }
+  connect()
+  return () => {
+    closed = true
+    window.clearTimeout(timer)
+    ws?.close()
+    ws = null
+  }
 }
 
 export async function downloadOvpn(name: string) {
@@ -231,7 +415,7 @@ export async function fetchSettings(): Promise<SetupState> {
   return data
 }
 
-export async function patchSettings(body: Record<string, string>): Promise<SetupState> {
+export async function patchSettings(body: Record<string, unknown>): Promise<SetupState> {
   const { data } = await api.patch<SetupState>('/settings', body)
   return data
 }

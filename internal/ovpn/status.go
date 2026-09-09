@@ -2,10 +2,13 @@ package ovpn
 
 import (
 	"bufio"
+	"errors"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Session is one connected client from the OpenVPN status file.
@@ -17,6 +20,80 @@ type Session struct {
 	BytesReceived int64  `json:"bytes_received"`
 	BytesSent     int64  `json:"bytes_sent"`
 	Since         string `json:"since,omitempty"`
+	SinceUnix     int64  `json:"since_unix,omitempty"`
+	LastRef       string `json:"last_ref,omitempty"`
+	ClientID      int64  `json:"client_id,omitempty"`
+}
+
+// RuntimeStatusFile is the status path systemd injects for openvpn-server@instance.
+func RuntimeStatusFile(unit string) string {
+	unit = strings.TrimSpace(unit)
+	unit = strings.TrimSuffix(unit, ".service")
+	_, inst, ok := strings.Cut(unit, "@")
+	if !ok || inst == "" {
+		return ""
+	}
+	if strings.ContainsAny(inst, `/\`) {
+		return ""
+	}
+	return filepath.Join("/run/openvpn-server", "status-"+inst+".log")
+}
+
+// StatusCandidates lists files that may hold the live client list.
+func StatusCandidates(confStatus, unit string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(p string) {
+		p = strings.TrimSpace(p)
+		if p == "" || seen[p] {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	add(confStatus)
+	add(RuntimeStatusFile(unit))
+	return out
+}
+
+// ParseBestStatus returns sessions from the most useful readable status file.
+func ParseBestStatus(paths []string) ([]Session, string, error) {
+	type hit struct {
+		path string
+		ss   []Session
+		mod  time.Time
+	}
+	var ok []hit
+	var firstErr error
+	var firstPath string
+	for _, p := range paths {
+		ss, err := ParseStatusFile(p)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+				firstPath = p
+			} else if errors.Is(firstErr, os.ErrNotExist) && !os.IsNotExist(err) {
+				firstErr = err
+				firstPath = p
+			}
+			continue
+		}
+		var mod time.Time
+		if st, e := os.Stat(p); e == nil {
+			mod = st.ModTime()
+		}
+		ok = append(ok, hit{path: p, ss: ss, mod: mod})
+	}
+	if len(ok) == 0 {
+		return nil, firstPath, firstErr
+	}
+	best := ok[0]
+	for _, h := range ok[1:] {
+		if len(h.ss) > len(best.ss) || (len(h.ss) == len(best.ss) && h.mod.After(best.mod)) {
+			best = h
+		}
+	}
+	return best.ss, best.path, nil
 }
 
 // ParseStatusFile reads OpenVPN status log (classic or status-version 2/3).
@@ -29,6 +106,7 @@ func ParseStatusFile(path string) ([]Session, error) {
 
 	var sessions []Session
 	virt := map[string]string{}
+	lastRef := map[string]string{}
 	section := ""
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -64,7 +142,11 @@ func ParseStatusFile(path string) ([]Session, error) {
 		if strings.HasPrefix(line, "ROUTING_TABLE,") {
 			parts := strings.Split(line, ",")
 			if len(parts) >= 3 {
-				virt[strings.TrimSpace(parts[2])] = strings.TrimSpace(parts[1])
+				name := strings.TrimSpace(parts[2])
+				virt[name] = strings.TrimSpace(parts[1])
+				if len(parts) >= 5 {
+					lastRef[name] = strings.TrimSpace(parts[4])
+				}
 			}
 			continue
 		}
@@ -96,7 +178,11 @@ func ParseStatusFile(path string) ([]Session, error) {
 			}
 			parts := strings.Split(line, ",")
 			if len(parts) >= 2 {
-				virt[strings.TrimSpace(parts[1])] = strings.TrimSpace(parts[0])
+				name := strings.TrimSpace(parts[1])
+				virt[name] = strings.TrimSpace(parts[0])
+				if len(parts) >= 4 {
+					lastRef[name] = strings.TrimSpace(parts[3])
+				}
 			}
 		}
 	}
@@ -106,6 +192,9 @@ func ParseStatusFile(path string) ([]Session, error) {
 	for i := range sessions {
 		if sessions[i].VirtualIP == "" {
 			sessions[i].VirtualIP = virt[sessions[i].Name]
+		}
+		if sessions[i].LastRef == "" {
+			sessions[i].LastRef = lastRef[sessions[i].Name]
 		}
 	}
 	return sessions, nil
@@ -131,6 +220,12 @@ func parseClientListCSV(line string) (Session, bool) {
 	}
 	if len(parts) > 7 {
 		s.Since = strings.TrimSpace(parts[7])
+	}
+	if len(parts) > 8 {
+		s.SinceUnix, _ = strconv.ParseInt(strings.TrimSpace(parts[8]), 10, 64)
+	}
+	if len(parts) > 10 {
+		s.ClientID, _ = strconv.ParseInt(strings.TrimSpace(parts[10]), 10, 64)
 	}
 	if s.Name == "" || s.Name == "UNDEF" {
 		return Session{}, false

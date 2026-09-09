@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { setLocale } from '@/i18n'
+import BrandLogo from '@/components/BrandLogo.vue'
 
 const { t, locale } = useI18n()
 
@@ -10,13 +11,12 @@ function toggle() {
 </script>
 
 <template>
-  <header class="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 flex items-center justify-between">
-    <div>
-      <div class="font-display text-2xl tracking-tight text-base-content">{{ t('app.title') }}</div>
-      <div class="text-xs uppercase tracking-[0.2em] text-primary/80 mt-1">{{ t('app.subtitle') }}</div>
+  <header class="fixed top-0 inset-x-0 z-50 border-b border-base-content/10 bg-base-100/95 backdrop-blur-xl">
+    <div class="flex items-center justify-between gap-4 max-w-[90rem] mx-auto px-3 sm:px-5 min-h-14">
+      <BrandLogo />
+      <button class="btn btn-ghost btn-sm font-mono" type="button" @click="toggle">
+        {{ locale === 'ru' ? t('lang.en') : t('lang.ru') }}
+      </button>
     </div>
-    <button class="btn btn-ghost btn-sm font-mono" type="button" @click="toggle">
-      {{ locale === 'ru' ? t('lang.en') : t('lang.ru') }}
-    </button>
   </header>
 </template>

@@ -29,10 +29,11 @@ status /var/log/openvpn/status.log
 
 ```bash
 curl -fsSL https://github.com/mosimosi228/ovpn-dash/releases/latest/download/install.sh | sudo sh
-sudo systemctl start ovpn-dash
 ```
 
-Откройте `http://127.0.0.1:7474/dashboard/` **с этой машины**. Первый запуск: логин администратора и пути. Потом те же поля — во вкладке **Настройки**.
+Установщик сохраняет `/etc/ovpn-dash` (пользователи, сертификаты, пути) и перезапускает `ovpn-dash.service`. Схема мигрирует при старте.
+
+Откройте `http://127.0.0.1:7474/dashboard/` **с этой машины**. Первый запуск: **email** root, пароль и пути (SMTP и Telegram-бот необязательны). Дальше: **Профиль** — свой аккаунт, **Настройки** — PKI/SMTP/бот, **Пользователи** — остальные.
 
 | Поле | Пример |
 | --- | --- |

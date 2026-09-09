@@ -52,3 +52,22 @@ func (p *hostPaths) validate() error {
 	}
 	return nil
 }
+
+func absPath(p string) string {
+	if p == "" {
+		return p
+	}
+	if filepath.IsAbs(p) {
+		return p
+	}
+	a, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	return a
+}
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
+}

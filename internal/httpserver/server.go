@@ -12,6 +12,7 @@ import (
 )
 
 func (h *Handler) serverStatus(w http.ResponseWriter, r *http.Request) {
+	h.ensurePublishedCRL(r)
 	s := h.loadSettings(r)
 	active, state, err := systemd.IsActive(s.Unit)
 	if err != nil {
@@ -31,15 +32,22 @@ func (h *Handler) serverStatus(w http.ResponseWriter, r *http.Request) {
 		resp["port"] = cfg.Port
 		resp["proto"] = cfg.Proto
 		resp["cipher"] = cfg.Cipher
+		resp["network"] = cfg.Network
 		resp["has_tls_crypt"] = cfg.HasTLSCrypt
 		resp["has_tls_auth"] = cfg.HasTLSAuth
 		resp["has_crl_verify"] = cfg.HasCRLVerify
 		resp["warnings"] = cfg.Warnings()
+		if ss, _, serr := ovpn.ParseBestStatus(ovpn.StatusCandidates(cfg.StatusFile, s.Unit)); serr == nil {
+			resp["sessions"] = len(ss)
+		} else {
+			resp["sessions"] = 0
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) serverStart(w http.ResponseWriter, r *http.Request) {
+	h.publishCRL(r)
 	s := h.loadSettings(r)
 	if err := systemd.Start(s.Unit); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())

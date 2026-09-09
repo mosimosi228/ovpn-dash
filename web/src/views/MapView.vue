@@ -8,6 +8,7 @@ const props = defineProps<{ items: Connection[] }>()
 const el = ref<HTMLElement | null>(null)
 let map: L.Map | null = null
 let layer: L.LayerGroup | null = null
+let tilesLayer: L.TileLayer | null = null
 
 function plot() {
   if (!layer) return
@@ -17,12 +18,12 @@ function plot() {
     if (!c.lat && !c.lon) continue
     const marker = L.circleMarker([c.lat, c.lon], {
       radius: 8,
-      color: '#22d3ee',
+      color: '#0f766e',
       fillColor: '#14b8a6',
       fillOpacity: 0.9,
       weight: 2,
     })
-    const loc = [c.city, c.country].filter(Boolean).join(', ')
+    const loc = [c.city, c.region, c.country].filter(Boolean).join(', ')
     marker.bindPopup(`<b>${esc(c.name)}</b><br>${esc(c.real_ip)}<br>${esc(loc)}`)
     marker.addTo(layer)
     pts.push([c.lat, c.lon])
@@ -32,13 +33,19 @@ function plot() {
   }
 }
 
+function setTiles() {
+  if (!map) return
+  tilesLayer?.remove()
+  tilesLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19,
+  }).addTo(map)
+}
+
 onMounted(() => {
   if (!el.value) return
   map = L.map(el.value, { worldCopyJump: true, zoomControl: true }).setView([25, 20], 2)
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OpenStreetMap &copy; CARTO',
-    maxZoom: 18,
-  }).addTo(map)
+  setTiles()
   layer = L.layerGroup().addTo(map)
   plot()
   requestAnimationFrame(() => map?.invalidateSize())
@@ -54,6 +61,7 @@ onBeforeUnmount(() => {
   map?.remove()
   map = null
   layer = null
+  tilesLayer = null
 })
 </script>
 
@@ -63,12 +71,17 @@ onBeforeUnmount(() => {
 
 <style>
 .leaflet-container {
-  background: #0a1018;
   font-family: inherit;
+  background: #aad3df;
 }
-.leaflet-popup-content-wrapper,
-.leaflet-popup-tip {
+html[data-theme='dark'] .leaflet-popup-content-wrapper,
+html[data-theme='dark'] .leaflet-popup-tip {
   background: #121a24;
   color: #c5d0dc;
+}
+html[data-theme='light'] .leaflet-popup-content-wrapper,
+html[data-theme='light'] .leaflet-popup-tip {
+  background: #ffffff;
+  color: #1e293b;
 }
 </style>

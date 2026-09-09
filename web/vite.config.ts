@@ -21,7 +21,7 @@ export default defineConfig({
     proxy: {
       '/dashboard/api': 'http://127.0.0.1:7474',
       '/auth': 'http://127.0.0.1:7474',
-      '/api': 'http://127.0.0.1:7474',
+      '/api': { target: 'http://127.0.0.1:7474', ws: true },
     },
   },
 })

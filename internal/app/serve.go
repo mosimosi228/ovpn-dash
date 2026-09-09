@@ -88,6 +88,7 @@ func Serve(opts ServeOptions) error {
 		Log:    log,
 		Geo:    geo.New(),
 	}
+	go h.RunTelegram(opts.BaseCtx)
 	handler := h.Routes()
 
 	srv := &http.Server{

@@ -24,7 +24,9 @@ auth SHA256
 tls-crypt ta.key
 crl-verify crl.pem
 status /var/log/openvpn/status.log
+management 127.0.0.1 7505
 log /var/log/openvpn/server.log
+server 10.7.0.0 255.255.255.0
 <ca>
 -----BEGIN CERTIFICATE-----
 xxx
@@ -58,6 +60,12 @@ xxx
 	}
 	if cfg.LogFile != "/var/log/openvpn/server.log" {
 		t.Fatalf("log %s", cfg.LogFile)
+	}
+	if cfg.Network != "10.7.0.0" {
+		t.Fatalf("network %s", cfg.Network)
+	}
+	if cfg.ManagementAddr != "127.0.0.1:7505" || cfg.ManagementNet != "tcp" {
+		t.Fatalf("management %s %s", cfg.ManagementNet, cfg.ManagementAddr)
 	}
 }
 

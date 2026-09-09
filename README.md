@@ -29,10 +29,11 @@ For revoke to take effect, add `crl-verify` pointing at the CRL. For a TLS key i
 
 ```bash
 curl -fsSL https://github.com/mosimosi228/ovpn-dash/releases/latest/download/install.sh | sudo sh
-sudo systemctl start ovpn-dash
 ```
 
-Open `http://127.0.0.1:7474/dashboard/` **from this machine**. First run: admin login and host paths. Later the same fields are on the **Settings** tab.
+The installer keeps `/etc/ovpn-dash` (users, certs, paths) and restarts `ovpn-dash.service`. Schema migrates on boot.
+
+Open `http://127.0.0.1:7474/dashboard/` **from this machine**. First run: root **email** + password and host paths (optional SMTP and Telegram bot). Later: **Profile** for your account, **Settings** for PKI/SMTP/bot, **Users** for other accounts.
 
 | Field | Example |
 | --- | --- |

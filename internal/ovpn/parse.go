@@ -2,6 +2,7 @@ package ovpn
 
 import (
 	"bufio"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,20 +11,24 @@ import (
 
 // Config is the subset of server.conf needed to build client profiles and warn the operator.
 type Config struct {
-	Port         int
-	Proto        string
-	Cipher       string
-	Auth         string
-	TLSCryptPath string
-	TLSAuthPath  string
-	TLSAuthDir   int
-	CRLVerify    string
-	StatusFile   string
-	LogFile      string
-	Dev          string
-	HasTLSCrypt  bool
-	HasTLSAuth   bool
-	HasCRLVerify bool
+	Port           int
+	Proto          string
+	Cipher         string
+	Auth           string
+	TLSCryptPath   string
+	TLSAuthPath    string
+	TLSAuthDir     int
+	CRLVerify      string
+	StatusFile     string
+	LogFile        string
+	Dev            string
+	Network        string
+	HasTLSCrypt    bool
+	HasTLSAuth     bool
+	HasCRLVerify   bool
+	ManagementNet  string // "tcp" or "unix"
+	ManagementAddr string // host:port or socket path
+	ManagementPass string // optional password file
 }
 
 // ParseFile reads an OpenVPN server.conf.
@@ -101,8 +106,14 @@ func ParseFile(path string) (*Config, error) {
 		case "crl-verify":
 			cfg.CRLVerify = resolve(dir, firstArg(val))
 			cfg.HasCRLVerify = cfg.CRLVerify != ""
+		case "server":
+			if n := firstArg(val); n != "" {
+				cfg.Network = n
+			}
 		case "status":
 			cfg.StatusFile = resolve(dir, firstArg(val))
+		case "management":
+			parseManagement(cfg, dir, val)
 		case "log", "log-append":
 			if p := firstArg(val); p != "" {
 				cfg.LogFile = resolve(dir, p)
@@ -116,6 +127,28 @@ func ParseFile(path string) (*Config, error) {
 		cfg.Cipher = "AES-256-GCM"
 	}
 	return cfg, nil
+}
+
+func parseManagement(cfg *Config, dir, val string) {
+	fields := strings.Fields(val)
+	if len(fields) == 0 {
+		return
+	}
+	if len(fields) >= 2 && strings.EqualFold(fields[1], "unix") {
+		cfg.ManagementNet = "unix"
+		cfg.ManagementAddr = resolve(dir, fields[0])
+		if len(fields) >= 3 {
+			cfg.ManagementPass = resolve(dir, fields[2])
+		}
+		return
+	}
+	if len(fields) >= 2 {
+		cfg.ManagementNet = "tcp"
+		cfg.ManagementAddr = net.JoinHostPort(fields[0], fields[1])
+		if len(fields) >= 3 {
+			cfg.ManagementPass = resolve(dir, fields[2])
+		}
+	}
 }
 
 func firstArg(val string) string {

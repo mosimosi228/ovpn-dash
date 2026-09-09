@@ -22,6 +22,7 @@ import (
 	"github.com/go-chi/httprate"
 	"github.com/mosimosi228/kit/auth"
 	"github.com/mosimosi228/ovpn-dash/internal/geo"
+	"github.com/mosimosi228/ovpn-dash/internal/mailer"
 	"github.com/mosimosi228/ovpn-dash/internal/settingsdb"
 	"github.com/mosimosi228/ovpn-dash/internal/setup"
 	"github.com/mosimosi228/ovpn-dash/web"
@@ -34,6 +35,9 @@ type Handler struct {
 	Tokens *auth.Auth
 	Log    *slog.Logger
 	Geo    geo.Locator
+
+	MailSend func(cfg mailer.Config, to, subject, body string) error
+	TGSend   func(token, chatID, text string) error
 }
 
 type ctxKey int
@@ -42,49 +46,72 @@ const userKey ctxKey = 1
 
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
-	if h.Log != nil {
-		r.Use(httplog.RequestLogger(h.Log, &httplog.Options{
-			Level:         slog.LevelInfo,
-			Schema:        httplog.SchemaOTEL,
-			RecoverPanics: true,
-		}))
-	} else {
-		r.Use(middleware.Recoverer)
-	}
 	r.Use(middleware.RealIP)
 	r.Use(middleware.CleanPath)
 	r.Use(cors)
-	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"ok": "1"})
-	})
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/dashboard/", http.StatusFound)
-	})
 
-	r.With(httprate.LimitByIP(5, time.Minute)).Post("/auth/login", h.login)
-	r.Post("/auth/refresh", h.refresh)
+	// Hijack/WebSocket must not go through httplog's response wrapper.
+	r.Get("/api/v1/connections/ws", h.connectionsWS)
 
-	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(h.requireJWT)
-		r.Get("/me", h.me)
-		r.Patch("/me", h.patchMe)
-		r.Get("/settings", h.getSettings)
-		r.Patch("/settings", h.patchSettings)
-		r.Get("/server", h.serverStatus)
-		r.Post("/server/start", h.serverStart)
-		r.Post("/server/stop", h.serverStop)
-		r.Get("/server/log", h.serverLog)
-		r.Get("/connections", h.listConnections)
-		r.Get("/clients", h.listClients)
-		r.Post("/clients", h.createClient)
-		r.Get("/clients/{name}/ovpn", h.downloadOVPN)
-		r.Delete("/clients/{name}", h.deleteClient)
+	r.Group(func(r chi.Router) {
+		if h.Log != nil {
+			r.Use(httplog.RequestLogger(h.Log, &httplog.Options{
+				Level:         slog.LevelInfo,
+				Schema:        httplog.SchemaOTEL,
+				RecoverPanics: true,
+			}))
+		} else {
+			r.Use(middleware.Recoverer)
+		}
+		r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]string{"ok": "1"})
+		})
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/dashboard/", http.StatusFound)
+		})
+
+		r.With(httprate.LimitByIP(5, time.Minute)).Post("/auth/login", h.login)
+		r.With(httprate.LimitByIP(5, time.Minute)).Post("/auth/login/pin", h.loginPIN)
+		r.With(httprate.LimitByIP(10, time.Minute)).Post("/auth/login/pin/verify", h.verifyPIN)
+		r.Post("/auth/refresh", h.refresh)
+		r.With(httprate.LimitByIP(5, time.Minute)).Post("/auth/forgot", h.forgotPassword)
+		r.Post("/auth/reset", h.resetPassword)
+
+		r.Route("/api/v1", func(r chi.Router) {
+			r.Use(h.requireJWT)
+			r.Get("/me", h.me)
+			r.Patch("/me", h.patchMe)
+			r.Post("/me/telegram/bind", h.telegramBind)
+			r.Delete("/me/telegram", h.telegramUnbind)
+			r.Get("/me/ovpn", h.myOVPN)
+			r.Get("/clients/{name}/ovpn", h.downloadOVPN)
+
+			r.Group(func(r chi.Router) {
+				r.Use(h.requireRoles(setup.RoleRoot, setup.RoleAdmin))
+				r.Get("/settings", h.getSettings)
+				r.Patch("/settings", h.patchSettings)
+				r.Get("/server", h.serverStatus)
+				r.Post("/server/start", h.serverStart)
+				r.Post("/server/stop", h.serverStop)
+				r.Get("/server/log", h.serverLog)
+				r.Get("/connections", h.listConnections)
+				r.Post("/connections/kill", h.killConnection)
+				r.Get("/clients", h.listClients)
+				r.Post("/clients", h.createClient)
+				r.Post("/clients/{name}/reissue", h.reissueClient)
+				r.Delete("/clients/{name}", h.deleteClient)
+				r.Get("/users", h.listUsers)
+				r.Post("/users", h.createUser)
+				r.Patch("/users/{id}", h.patchUser)
+				r.Delete("/users/{id}", h.deleteUser)
+			})
+		})
+
+		r.Get("/dashboard/api/state", h.apiState)
+		r.Post("/dashboard/api/setup", h.apiSetup)
+		r.Handle("/dashboard", h.spa())
+		r.Handle("/dashboard/*", h.spa())
 	})
-
-	r.Get("/dashboard/api/state", h.apiState)
-	r.Post("/dashboard/api/setup", h.apiSetup)
-	r.Handle("/dashboard", h.spa())
-	r.Handle("/dashboard/*", h.spa())
 	return r
 }
 
@@ -177,11 +204,6 @@ func serveIndex(w http.ResponseWriter, dist fs.FS) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(b)
-}
-
-func (h *Handler) hasAdmin(r *http.Request) bool {
-	u, _ := h.DB.GetMeta(r.Context(), setup.KeyAdminUser)
-	return u != ""
 }
 
 func (h *Handler) isComplete(r *http.Request) bool {

@@ -106,8 +106,8 @@ func TestIssueRevokeProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 0 {
-		t.Fatalf("expected files removed, got %+v", list)
+	if len(list) != 1 || !list[0].Revoked || list[0].HasKey {
+		t.Fatalf("expected revoked cert kept without key, got %+v", list)
 	}
 }
 
@@ -160,5 +160,48 @@ func TestIssueCyrillic(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].Name != "Сергей" {
 		t.Fatalf("list %+v", list)
+	}
+}
+
+func TestReissueAndCRLCopy(t *testing.T) {
+	dir := t.TempDir()
+	writeTestCA(t, dir)
+	s := &Store{Dir: dir}
+	if err := s.Issue("alice"); err != nil {
+		t.Fatal(err)
+	}
+	old, err := os.ReadFile(filepath.Join(dir, "issued", "alice.crt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Reissue("alice"); err != nil {
+		t.Fatal(err)
+	}
+	next, err := os.ReadFile(filepath.Join(dir, "issued", "alice.crt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(old) == string(next) {
+		t.Fatal("cert should change")
+	}
+	list, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Revoked || !list[0].HasKey {
+		t.Fatalf("list %+v", list)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "crl.pem")); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "server-crl.pem")
+	if err := s.EnsureCRL(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CopyCRL(dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatal(err)
 	}
 }

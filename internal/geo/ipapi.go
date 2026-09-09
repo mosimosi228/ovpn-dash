@@ -11,11 +11,13 @@ import (
 
 // Info is a coarse location for a public IP.
 type Info struct {
-	IP      string  `json:"ip"`
-	Country string  `json:"country,omitempty"`
-	City    string  `json:"city,omitempty"`
-	Lat     float64 `json:"lat,omitempty"`
-	Lon     float64 `json:"lon,omitempty"`
+	IP          string  `json:"ip"`
+	Country     string  `json:"country,omitempty"`
+	CountryCode string  `json:"country_code,omitempty"`
+	Region      string  `json:"region,omitempty"`
+	City        string  `json:"city,omitempty"`
+	Lat         float64 `json:"lat,omitempty"`
+	Lon         float64 `json:"lon,omitempty"`
 }
 
 // Locator looks up coordinates for a public IP.
@@ -65,22 +67,27 @@ func (a *API) Lookup(ip string) *Info {
 }
 
 func (a *API) fetch(ip string) *Info {
-	u := "http://ip-api.com/json/" + ip + "?fields=status,country,city,lat,lon,query"
+	u := "http://ip-api.com/json/" + ip + "?fields=status,country,countryCode,regionName,city,lat,lon,query"
 	res, err := a.client.Get(u)
 	if err != nil {
 		return nil
 	}
 	defer res.Body.Close()
 	var raw struct {
-		Status  string  `json:"status"`
-		Country string  `json:"country"`
-		City    string  `json:"city"`
-		Lat     float64 `json:"lat"`
-		Lon     float64 `json:"lon"`
-		Query   string  `json:"query"`
+		Status      string  `json:"status"`
+		Country     string  `json:"country"`
+		CountryCode string  `json:"countryCode"`
+		RegionName  string  `json:"regionName"`
+		City        string  `json:"city"`
+		Lat         float64 `json:"lat"`
+		Lon         float64 `json:"lon"`
+		Query       string  `json:"query"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&raw); err != nil || raw.Status != "success" {
 		return nil
 	}
-	return &Info{IP: raw.Query, Country: raw.Country, City: raw.City, Lat: raw.Lat, Lon: raw.Lon}
+	return &Info{
+		IP: raw.Query, Country: raw.Country, CountryCode: raw.CountryCode,
+		Region: raw.RegionName, City: raw.City, Lat: raw.Lat, Lon: raw.Lon,
+	}
 }

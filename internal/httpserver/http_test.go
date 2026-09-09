@@ -103,7 +103,7 @@ func TestSetupGateAndLogin(t *testing.T) {
 
 	pkiDir, conf := writeMiniPKI(t, dir)
 	setupBody, _ := json.Marshal(map[string]string{
-		"username":    "admin",
+		"email":       "admin@example.com",
 		"password":    "password1",
 		"pki_dir":     pkiDir,
 		"server_conf": conf,
@@ -125,7 +125,7 @@ func TestSetupGateAndLogin(t *testing.T) {
 		t.Fatalf("setup: %d %s", res.StatusCode, body)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin", "password": "password1"})
+	loginBody, _ := json.Marshal(map[string]string{"email": "admin@example.com", "password": "password1"})
 	res, err = http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(loginBody))
 	if err != nil {
 		t.Fatal(err)
@@ -163,7 +163,7 @@ func TestSetupGateAndLogin(t *testing.T) {
 		t.Fatalf("me without jwt: %d", res.StatusCode)
 	}
 
-	bad, _ := json.Marshal(map[string]string{"username": "admin", "password": "wrong-password"})
+	bad, _ := json.Marshal(map[string]string{"email": "admin@example.com", "password": "wrong-password"})
 	res, err = http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(bad))
 	if err != nil {
 		t.Fatal(err)
@@ -171,6 +171,16 @@ func TestSetupGateAndLogin(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("bad login: %d", res.StatusCode)
+	}
+
+	byName, _ := json.Marshal(map[string]string{"username": "admin", "password": "password1"})
+	res, err = http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(byName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("login by username: %d", res.StatusCode)
 	}
 }
 
@@ -180,7 +190,7 @@ func setupAndToken(t *testing.T, srv *httptest.Server, dir string) (token, pkiDi
 	tok := string(bytes.TrimSpace(tokb))
 	pkiDir, conf = writeMiniPKI(t, dir)
 	setupBody, _ := json.Marshal(map[string]string{
-		"username":    "admin",
+		"email":       "admin@example.com",
 		"password":    "password1",
 		"pki_dir":     pkiDir,
 		"server_conf": conf,
@@ -200,7 +210,7 @@ func setupAndToken(t *testing.T, srv *httptest.Server, dir string) (token, pkiDi
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("setup: %d %s", res.StatusCode, body)
 	}
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin", "password": "password1"})
+	loginBody, _ := json.Marshal(map[string]string{"email": "admin@example.com", "password": "password1"})
 	res, err = http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(loginBody))
 	if err != nil {
 		t.Fatal(err)
@@ -256,14 +266,10 @@ func TestPatchSettings(t *testing.T) {
 	}
 
 	bad, _ := json.Marshal(map[string]string{
-		"pki_dir":          pki2,
-		"server_conf":      conf2,
-		"unit":             "openvpn@server",
-		"public_host":      "vpn.other.example",
 		"current_password": "wrong",
 		"password":         "newpassword",
 	})
-	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/api/v1/settings", bytes.NewReader(bad))
+	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/api/v1/me", bytes.NewReader(bad))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	res, err = http.DefaultClient.Do(req)
@@ -276,14 +282,10 @@ func TestPatchSettings(t *testing.T) {
 	}
 
 	okpw, _ := json.Marshal(map[string]string{
-		"pki_dir":          pki2,
-		"server_conf":      conf2,
-		"unit":             "openvpn@server",
-		"public_host":      "vpn.other.example",
 		"current_password": "password1",
 		"password":         "newpassword",
 	})
-	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/api/v1/settings", bytes.NewReader(okpw))
+	req, _ = http.NewRequest(http.MethodPatch, srv.URL+"/api/v1/me", bytes.NewReader(okpw))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	res, err = http.DefaultClient.Do(req)
@@ -295,7 +297,7 @@ func TestPatchSettings(t *testing.T) {
 		t.Fatalf("password patch: %d", res.StatusCode)
 	}
 
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin", "password": "newpassword"})
+	loginBody, _ := json.Marshal(map[string]string{"email": "admin@example.com", "password": "newpassword"})
 	res, err = http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(loginBody))
 	if err != nil {
 		t.Fatal(err)
@@ -374,12 +376,23 @@ func TestStaticAssetCSSMime(t *testing.T) {
 	}
 	href := ""
 	const marker = `href="/dashboard/`
-	if i := bytes.Index(html, []byte(marker)); i >= 0 {
-		rest := html[i+len(marker):]
-		end := bytes.IndexByte(rest, '"')
-		if end > 0 {
-			href = "/dashboard/" + string(rest[:end])
+	rest := html
+	for {
+		i := bytes.Index(rest, []byte(marker))
+		if i < 0 {
+			break
 		}
+		rest = rest[i+len(marker):]
+		end := bytes.IndexByte(rest, '"')
+		if end < 0 {
+			break
+		}
+		cand := "/dashboard/" + string(rest[:end])
+		if strings.HasSuffix(cand, ".css") {
+			href = cand
+			break
+		}
+		rest = rest[end+1:]
 	}
 	if href == "" || !strings.HasSuffix(href, ".css") {
 		t.Fatalf("no css href in index.html:\n%s", html)
@@ -395,5 +408,57 @@ func TestStaticAssetCSSMime(t *testing.T) {
 	}
 	if !strings.HasPrefix(ct, "text/css") {
 		t.Fatalf("css Content-Type %q, want text/css", ct)
+	}
+}
+
+func TestReissueThenListClients(t *testing.T) {
+	h, dir := newTestHandler(t)
+	srv := httptest.NewServer(h.Routes())
+	t.Cleanup(srv.Close)
+	tok, _, _ := setupAndToken(t, srv, dir)
+
+	res := authJSON(t, srv, tok, http.MethodPost, "/api/v1/users", map[string]string{
+		"email":       "bob@example.com",
+		"name":        "Bob",
+		"password":    "bobpassword",
+		"role":        "user",
+		"client_name": "bob",
+	})
+	raw, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+
+	res = authJSON(t, srv, tok, http.MethodPost, "/api/v1/clients/bob/reissue", nil)
+	raw, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("reissue %d %s", res.StatusCode, raw)
+	}
+
+	res = authJSON(t, srv, tok, http.MethodGet, "/api/v1/clients", nil)
+	raw, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d %s", res.StatusCode, raw)
+	}
+	var payload struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, it := range payload.Items {
+		if it["name"] == "bob" {
+			found = true
+			if it["has_key"] != true {
+				t.Fatalf("bob %+v", it)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("bob missing: %s", raw)
 	}
 }

@@ -14,6 +14,7 @@ require (
 require (
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/lmittmann/tint v1.2.0 // indirect

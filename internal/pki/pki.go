@@ -483,10 +483,77 @@ func (s *Store) loadExistingCRL(ca *x509.Certificate) []x509.RevocationListEntry
 	if err != nil {
 		return nil
 	}
-	if err := crl.CheckSignatureFrom(ca); err != nil {
-		return crl.RevokedCertificateEntries
-	}
 	return crl.RevokedCertificateEntries
+}
+
+func (s *Store) writeCRL(ca *x509.Certificate, caKey crypto.Signer, entries []x509.RevocationListEntry) error {
+	if entries == nil {
+		entries = []x509.RevocationListEntry{}
+	}
+	rl := &x509.RevocationList{
+		Number:                    big.NewInt(time.Now().Unix()),
+		ThisUpdate:                time.Now(),
+		NextUpdate:                time.Now().Add(10 * 365 * 24 * time.Hour),
+		RevokedCertificateEntries: entries,
+	}
+	der, err := x509.CreateRevocationList(rand.Reader, rl, caForCRL(ca), caKey)
+	if err != nil {
+		return fmt.Errorf("crl: %w", err)
+	}
+	pemCRL := pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: der})
+	return os.WriteFile(s.crlPath(), pemCRL, 0o644)
+}
+
+// EnsureCRL writes a CRL if missing and refreshes ThisUpdate when one exists.
+func (s *Store) EnsureCRL() error {
+	ca, caKey, err := s.loadCA()
+	if err != nil {
+		return err
+	}
+	return s.writeCRL(ca, caKey, s.loadExistingCRL(ca))
+}
+
+// CopyCRL writes the PKI CRL to dest (the crl-verify path in server.conf).
+func (s *Store) CopyCRL(dest string) error {
+	dest = strings.TrimSpace(dest)
+	if dest == "" {
+		return nil
+	}
+	src, err := filepath.Abs(s.crlPath())
+	if err != nil {
+		src = s.crlPath()
+	}
+	dst, err := filepath.Abs(dest)
+	if err != nil {
+		dst = dest
+	}
+	if src == dst {
+		return nil
+	}
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, b, 0o644)
+}
+
+// Reissue revokes the current cert (if any) and issues a new one under the same CN.
+func (s *Store) Reissue(name string) error {
+	name = strings.TrimSpace(name)
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+	if _, err := os.Stat(s.clientCrtPath(name)); err == nil {
+		if err := s.Revoke(name); err != nil {
+			return err
+		}
+	}
+	_ = os.Remove(s.clientCrtPath(name))
+	_ = os.Remove(s.clientKeyPath(name))
+	return s.Issue(name)
 }
 
 // Revoke adds the client cert to the CRL, marks it R in index.txt,
@@ -526,19 +593,7 @@ func (s *Store) Revoke(name string) error {
 			RevocationTime: time.Now(),
 		})
 	}
-	number := big.NewInt(time.Now().Unix())
-	rl := &x509.RevocationList{
-		Number:                    number,
-		ThisUpdate:                time.Now(),
-		NextUpdate:                time.Now().Add(10 * 365 * 24 * time.Hour),
-		RevokedCertificateEntries: entries,
-	}
-	der, err := x509.CreateRevocationList(rand.Reader, rl, caForCRL(ca), caKey)
-	if err != nil {
-		return fmt.Errorf("crl: %w", err)
-	}
-	pemCRL := pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: der})
-	if err := os.WriteFile(s.crlPath(), pemCRL, 0o644); err != nil {
+	if err := s.writeCRL(ca, caKey, entries); err != nil {
 		return err
 	}
 	if err := s.markIndexR(cert.SerialNumber); err != nil {
