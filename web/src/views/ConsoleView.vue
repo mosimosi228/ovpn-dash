@@ -66,6 +66,7 @@ const busy = ref(false)
 const nowTick = ref(Date.now())
 let stopConnections: (() => void) | null = null
 let tickTimer = 0
+let pollTimer = 0
 
 const protoPort = computed(() => {
   const proto = (server.value?.proto || 'udp').toUpperCase()
@@ -158,6 +159,7 @@ onUnmounted(() => {
   stopConnections?.()
   stopConnections = null
   if (tickTimer) window.clearInterval(tickTimer)
+  if (pollTimer) window.clearInterval(pollTimer)
 })
 
 function onPop() {
@@ -179,6 +181,10 @@ function startLiveConnections() {
   if (tickTimer) window.clearInterval(tickTimer)
   tickTimer = window.setInterval(() => {
     nowTick.value = Date.now()
+  }, 1000)
+  if (pollTimer) window.clearInterval(pollTimer)
+  pollTimer = window.setInterval(() => {
+    loadConnections()
   }, 1000)
   stopConnections?.()
   stopConnections = openConnectionsSocket((data) => {
@@ -326,7 +332,7 @@ async function onDisconnect(c: Connection) {
   }
   if (!confirm(t('map.confirmDisconnect', { name: c.name }))) return
   try {
-    await killConnection({ name: c.name, real_address: c.real_address })
+    await killConnection({ name: c.name, real_address: c.real_address, client_id: c.client_id })
     flash('success', t('map.disconnected', { name: c.name }))
     await loadConnections()
   } catch {

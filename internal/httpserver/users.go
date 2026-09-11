@@ -252,6 +252,10 @@ func (h *Handler) createUserWithCert(r *http.Request, email, name, password, cli
 	if err := h.store(r).Issue(cn); err != nil {
 		return settingsdb.User{}, err
 	}
+	if err := h.writeClientOvpn(r, cn); err != nil {
+		_ = h.store(r).Revoke(cn)
+		return settingsdb.User{}, err
+	}
 	u, err := h.insertAccount(r, email, name, password, setup.RoleUser, cn)
 	if err != nil {
 		_ = h.store(r).Revoke(cn)

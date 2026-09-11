@@ -23,6 +23,7 @@ func (h *Handler) store(r *http.Request) *pki.Store {
 }
 
 func (h *Handler) listClients(w http.ResponseWriter, r *http.Request) {
+	h.syncClientOvpns(r)
 	items, err := h.store(r).List()
 	if err != nil {
 		items = []pki.Client{}
@@ -145,15 +146,35 @@ func (h *Handler) writeOVPN(w http.ResponseWriter, r *http.Request, name string)
 		writeError(w, http.StatusBadGateway, "server.conf: "+err.Error())
 		return
 	}
-	body, err := h.store(r).Profile(name, s.PublicHost, cfg)
+	st := h.store(r)
+	body, err := st.Profile(name, s.PublicHost, cfg)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	_ = st.SaveOvpn(name, body)
 	w.Header().Set("Content-Type", "application/x-openvpn-profile")
 	w.Header().Set("Content-Disposition", ovpnDisposition(name))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
+}
+
+func (h *Handler) writeClientOvpn(r *http.Request, name string) error {
+	s := h.loadSettings(r)
+	cfg, err := ovpn.ParseFile(s.ServerConf)
+	if err != nil {
+		return err
+	}
+	return h.store(r).WriteOvpn(name, s.PublicHost, cfg)
+}
+
+func (h *Handler) syncClientOvpns(r *http.Request) {
+	s := h.loadSettings(r)
+	cfg, err := ovpn.ParseFile(s.ServerConf)
+	if err != nil {
+		return
+	}
+	h.store(r).SyncOvpns(s.PublicHost, cfg)
 }
 
 func ovpnDisposition(name string) string {
@@ -203,6 +224,7 @@ func (h *Handler) reissueClient(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	_ = h.writeClientOvpn(r, name)
 	if u, err := h.DB.GetUserByClientName(r.Context(), name); err == nil {
 		u.Disabled = false
 		_ = h.DB.UpdateUser(r.Context(), u)

@@ -1,8 +1,8 @@
 package httpserver
 
 import (
+	"bufio"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -113,7 +113,7 @@ func TestKillConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	t.Cleanup(func() { _ = ln.Close() })
 	_, port, err := net.SplitHostPort(ln.Addr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -126,31 +126,8 @@ func TestKillConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	errc := make(chan error, 1)
-	go func() {
-		c, err := ln.Accept()
-		if err != nil {
-			errc <- err
-			return
-		}
-		defer c.Close()
-		if _, err := c.Write([]byte(">INFO:OpenVPN Management Interface Version 3\n")); err != nil {
-			errc <- err
-			return
-		}
-		buf := make([]byte, 256)
-		n, err := c.Read(buf)
-		if err != nil {
-			errc <- err
-			return
-		}
-		if !strings.Contains(string(buf[:n]), "kill alice") {
-			errc <- fmt.Errorf("cmd %q", buf[:n])
-			return
-		}
-		_, _ = c.Write([]byte("SUCCESS: common name 'alice' found, 1 client(s) killed\n"))
-		errc <- nil
-	}()
+	killed := make(chan struct{}, 1)
+	go serveFakeOpenVPNMgmt(ln, "CLIENT_LIST,alice,203.0.113.10:1,10.8.0.2,,1,2,now,1,x\nEND\n", killed)
 
 	body, _ := json.Marshal(map[string]string{"name": "alice"})
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/connections/kill", strings.NewReader(string(body)))
@@ -165,8 +142,10 @@ func TestKillConnection(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("%d %s", res.StatusCode, raw)
 	}
-	if err := <-errc; err != nil {
-		t.Fatal(err)
+	select {
+	case <-killed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("kill was not sent")
 	}
 }
 
@@ -191,5 +170,99 @@ func TestKillConnectionNoManage(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "nomanage") {
 		t.Fatalf("%s", raw)
+	}
+}
+
+func TestListConnectionsUsesManagement(t *testing.T) {
+	h, dir := newTestHandler(t)
+	srv := httptest.NewServer(h.Routes())
+	t.Cleanup(srv.Close)
+	tok, _, conf := setupAndToken(t, srv, dir)
+
+	stale := filepath.Join(dir, "status.log")
+	if err := os.WriteFile(stale, []byte("TITLE,OpenVPN\nEND\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	_, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	prev, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := "\nstatus " + stale + "\nmanagement 127.0.0.1 " + port + "\n"
+	if err := os.WriteFile(conf, append(prev, []byte(extra)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	go serveFakeOpenVPNMgmt(ln, "CLIENT_LIST,live,198.51.100.9:9,10.8.0.9,,1,2,now,1,x\nEND\n", nil)
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/connections", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("%d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), `"name":"live"`) {
+		t.Fatalf("want live client from management, got %s", raw)
+	}
+	if !strings.Contains(string(raw), `"status_file":"management"`) {
+		t.Fatalf("%s", raw)
+	}
+}
+
+func serveFakeOpenVPNMgmt(ln net.Listener, statusBody string, killed chan struct{}) {
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go handleFakeOpenVPNMgmt(c, statusBody, killed)
+		}
+	}()
+}
+
+func handleFakeOpenVPNMgmt(c net.Conn, statusBody string, killed chan struct{}) {
+	defer c.Close()
+	_, _ = c.Write([]byte(">INFO:OpenVPN Management Interface Version 3\n"))
+	r := bufio.NewReader(c)
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return
+		}
+		cmd := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(cmd, "bytecount"):
+			_, _ = c.Write([]byte("SUCCESS: bytecount interval changed\n"))
+		case cmd == "status 3" || cmd == "status":
+			body := statusBody
+			if !strings.HasSuffix(body, "\n") {
+				body += "\n"
+			}
+			if !strings.Contains(body, "END") {
+				body += "END\n"
+			}
+			_, _ = c.Write([]byte(body))
+		case strings.HasPrefix(cmd, "kill "), strings.HasPrefix(cmd, "client-kill "):
+			_, _ = c.Write([]byte("SUCCESS: common name found, 1 client(s) killed\n"))
+			if killed != nil {
+				select {
+				case killed <- struct{}{}:
+				default:
+				}
+			}
+		}
 	}
 }

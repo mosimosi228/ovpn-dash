@@ -20,6 +20,7 @@ type Config struct {
 	TLSAuthDir     int
 	CRLVerify      string
 	StatusFile     string
+	StatusInterval int // seconds; OpenVPN default is 60 when unset
 	LogFile        string
 	Dev            string
 	Network        string
@@ -111,7 +112,15 @@ func ParseFile(path string) (*Config, error) {
 				cfg.Network = n
 			}
 		case "status":
-			cfg.StatusFile = resolve(dir, firstArg(val))
+			fields := strings.Fields(val)
+			if len(fields) > 0 {
+				cfg.StatusFile = resolve(dir, fields[0])
+			}
+			if len(fields) > 1 {
+				if n, err := strconv.Atoi(fields[1]); err == nil && n > 0 {
+					cfg.StatusInterval = n
+				}
+			}
 		case "management":
 			parseManagement(cfg, dir, val)
 		case "log", "log-append":

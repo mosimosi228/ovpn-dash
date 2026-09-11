@@ -6,11 +6,22 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 )
 
 const manageTimeout = 4 * time.Second
+
+type liveCache struct {
+	mu  sync.Mutex
+	key string
+	at  time.Time
+	ss  []Session
+	err error
+}
+
+var liveSessionsCache liveCache
 
 // CanKill reports whether server.conf has a management interface we can dial.
 func (c *Config) CanKill() bool {
@@ -33,43 +44,142 @@ func sanitizeKillTarget(s string) (string, error) {
 	return s, nil
 }
 
+func (c *Config) managementPassword() (string, error) {
+	if c.ManagementPass == "" {
+		return "", nil
+	}
+	b, err := os.ReadFile(c.ManagementPass)
+	if err != nil {
+		return "", fmt.Errorf("management password: %w", err)
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+func (c *Config) dialManage() (net.Conn, *bufio.Reader, error) {
+	if !c.CanKill() {
+		return nil, nil, fmt.Errorf("nomanage")
+	}
+	pass, err := c.managementPassword()
+	if err != nil {
+		return nil, nil, err
+	}
+	conn, err := net.DialTimeout(c.ManagementNet, c.ManagementAddr, manageTimeout)
+	if err != nil {
+		return nil, nil, fmt.Errorf("management: %w", err)
+	}
+	_ = conn.SetDeadline(time.Now().Add(manageTimeout))
+	r := bufio.NewReader(conn)
+	if err := readUntilReady(r, conn, pass); err != nil {
+		_ = conn.Close()
+		return nil, nil, err
+	}
+	return conn, r, nil
+}
+
 // Kill disconnects a client via the OpenVPN management interface.
-// Prefer realAddress (IP:port); fall back to common name.
+// Tries common name first, then real address (IP:port).
 func (c *Config) Kill(realAddress, name string) error {
 	if !c.CanKill() {
 		return fmt.Errorf("nomanage")
 	}
-	target := strings.TrimSpace(realAddress)
-	if target == "" {
-		target = strings.TrimSpace(name)
+	var targets []string
+	if n := strings.TrimSpace(name); n != "" {
+		targets = append(targets, n)
 	}
-	target, err := sanitizeKillTarget(target)
-	if err != nil {
-		return err
+	if a := strings.TrimSpace(realAddress); a != "" && a != strings.TrimSpace(name) {
+		targets = append(targets, a)
 	}
-	pass := ""
-	if c.ManagementPass != "" {
-		b, err := os.ReadFile(c.ManagementPass)
+	if len(targets) == 0 {
+		return fmt.Errorf("client is required")
+	}
+	var last error
+	for _, target := range targets {
+		target, err := sanitizeKillTarget(target)
 		if err != nil {
-			return fmt.Errorf("management password: %w", err)
+			return err
 		}
-		pass = strings.TrimSpace(string(b))
+		conn, r, err := c.dialManage()
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(conn, "kill %s\n", target)
+		if err == nil {
+			err = readCommandResult(r)
+		}
+		_ = conn.Close()
+		if err == nil {
+			return nil
+		}
+		last = err
 	}
-	conn, err := net.DialTimeout(c.ManagementNet, c.ManagementAddr, manageTimeout)
+	return last
+}
+
+// LiveSessions returns the current client list from the management interface.
+func (c *Config) LiveSessions() ([]Session, error) {
+	if !c.CanKill() {
+		return nil, fmt.Errorf("nomanage")
+	}
+	key := c.ManagementNet + "\x00" + c.ManagementAddr
+	liveSessionsCache.mu.Lock()
+	if liveSessionsCache.key == key && time.Since(liveSessionsCache.at) < 300*time.Millisecond {
+		ss, err := liveSessionsCache.ss, liveSessionsCache.err
+		liveSessionsCache.mu.Unlock()
+		return ss, err
+	}
+	liveSessionsCache.mu.Unlock()
+
+	ss, err := c.fetchLiveSessions()
+	liveSessionsCache.mu.Lock()
+	liveSessionsCache.key = key
+	liveSessionsCache.at = time.Now()
+	liveSessionsCache.ss = ss
+	liveSessionsCache.err = err
+	liveSessionsCache.mu.Unlock()
+	return ss, err
+}
+
+func (c *Config) fetchLiveSessions() ([]Session, error) {
+	conn, r, err := c.dialManage()
 	if err != nil {
-		return fmt.Errorf("management: %w", err)
+		return nil, err
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(manageTimeout))
-
-	r := bufio.NewReader(conn)
-	if err := readUntilReady(r, conn, pass); err != nil {
-		return err
+	if _, err := fmt.Fprintf(conn, "status 3\n"); err != nil {
+		return nil, err
 	}
-	if _, err := fmt.Fprintf(conn, "kill %s\n", target); err != nil {
-		return err
+	var b strings.Builder
+	gotEND := false
+	for i := 0; i < 20000; i++ {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			break
+		}
+		trim := strings.TrimSpace(line)
+		up := strings.ToUpper(trim)
+		if strings.HasPrefix(trim, ">") {
+			continue
+		}
+		if strings.HasPrefix(up, "ERROR") {
+			return nil, fmt.Errorf("%s", strings.TrimSpace(strings.TrimPrefix(line, "ERROR:")))
+		}
+		b.WriteString(line)
+		if trim == "END" {
+			gotEND = true
+			break
+		}
 	}
-	return readCommandResult(r)
+	if b.Len() == 0 {
+		return nil, fmt.Errorf("management: empty status")
+	}
+	ss, err := ParseStatus(strings.NewReader(b.String()))
+	if err != nil {
+		return nil, err
+	}
+	if !gotEND && len(ss) == 0 {
+		return nil, fmt.Errorf("management: no status")
+	}
+	return ss, nil
 }
 
 func readUntilReady(r *bufio.Reader, conn net.Conn, pass string) error {

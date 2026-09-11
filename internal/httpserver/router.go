@@ -23,6 +23,7 @@ import (
 	"github.com/mosimosi228/kit/auth"
 	"github.com/mosimosi228/ovpn-dash/internal/geo"
 	"github.com/mosimosi228/ovpn-dash/internal/mailer"
+	"github.com/mosimosi228/ovpn-dash/internal/ovpn"
 	"github.com/mosimosi228/ovpn-dash/internal/settingsdb"
 	"github.com/mosimosi228/ovpn-dash/internal/setup"
 	"github.com/mosimosi228/ovpn-dash/web"
@@ -38,6 +39,7 @@ type Handler struct {
 
 	MailSend func(cfg mailer.Config, to, subject, body string) error
 	TGSend   func(token, chatID, text string) error
+	Mon      *ovpn.Monitor
 }
 
 type ctxKey int

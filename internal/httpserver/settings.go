@@ -82,6 +82,8 @@ func (h *Handler) patchSettings(w http.ResponseWriter, r *http.Request) {
 	_ = h.DB.SetMeta(ctx, setup.KeyLogFile, paths.LogFile)
 	_ = h.DB.SetMeta(ctx, setup.KeyPublicHost, paths.PublicHost)
 
+	h.syncClientOvpns(r)
+
 	if req.SMTPHost != nil {
 		_ = h.DB.SetMeta(ctx, setup.KeySMTPHost, strings.TrimSpace(*req.SMTPHost))
 	}

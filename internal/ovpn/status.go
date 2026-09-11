@@ -3,6 +3,7 @@ package ovpn
 import (
 	"bufio"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -22,7 +23,7 @@ type Session struct {
 	Since         string `json:"since,omitempty"`
 	SinceUnix     int64  `json:"since_unix,omitempty"`
 	LastRef       string `json:"last_ref,omitempty"`
-	ClientID      int64  `json:"client_id,omitempty"`
+	ClientID      int64  `json:"client_id"`
 }
 
 // RuntimeStatusFile is the status path systemd injects for openvpn-server@instance.
@@ -103,12 +104,16 @@ func ParseStatusFile(path string) ([]Session, error) {
 		return nil, err
 	}
 	defer f.Close()
+	return ParseStatus(f)
+}
 
+// ParseStatus reads OpenVPN status output (file or management `status 3`).
+func ParseStatus(r io.Reader) ([]Session, error) {
 	var sessions []Session
 	virt := map[string]string{}
 	lastRef := map[string]string{}
 	section := ""
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())

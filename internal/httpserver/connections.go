@@ -44,6 +44,15 @@ func (h *Handler) connectionsSnapshot(r *http.Request) connectionsPayload {
 		return out
 	}
 	out.CanKill = cfg.CanKill()
+	if cfg.CanKill() && h.Mon != nil {
+		h.Mon.Configure(cfg)
+		h.Mon.WaitStatus(2 * time.Second)
+		if ss, ok := h.Mon.Sessions(); ok {
+			out.StatusFile = "management"
+			h.fillConnections(&out, ss)
+			return out
+		}
+	}
 	paths := ovpn.StatusCandidates(cfg.StatusFile, s.Unit)
 	if len(paths) == 0 {
 		out.Hint = "status"
@@ -66,6 +75,11 @@ func (h *Handler) connectionsSnapshot(r *http.Request) connectionsPayload {
 		}
 		return out
 	}
+	h.fillConnections(&out, sessions)
+	return out
+}
+
+func (h *Handler) fillConnections(out *connectionsPayload, sessions []ovpn.Session) {
 	out.Items = make([]connectionDTO, 0, len(sessions))
 	for _, sess := range sessions {
 		dto := connectionDTO{Session: sess}
@@ -81,7 +95,6 @@ func (h *Handler) connectionsSnapshot(r *http.Request) connectionsPayload {
 		}
 		out.Items = append(out.Items, dto)
 	}
-	return out
 }
 
 func (h *Handler) listConnections(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +104,7 @@ func (h *Handler) listConnections(w http.ResponseWriter, r *http.Request) {
 type killConnReq struct {
 	Name        string `json:"name"`
 	RealAddress string `json:"real_address"`
+	ClientID    int64  `json:"client_id"`
 }
 
 func (h *Handler) killConnection(w http.ResponseWriter, r *http.Request) {
@@ -109,8 +123,16 @@ func (h *Handler) killConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "nomanage")
 		return
 	}
-	if err := cfg.Kill(req.RealAddress, req.Name); err != nil {
-		msg := err.Error()
+	var errKill error
+	if h.Mon != nil {
+		h.Mon.Configure(cfg)
+		h.Mon.WaitStatus(2 * time.Second)
+		errKill = h.Mon.Kill(req.RealAddress, req.Name, req.ClientID)
+	} else {
+		errKill = cfg.Kill(req.RealAddress, req.Name)
+	}
+	if errKill != nil {
+		msg := errKill.Error()
 		if msg == "nomanage" {
 			writeError(w, http.StatusBadRequest, "nomanage")
 			return

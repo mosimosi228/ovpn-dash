@@ -324,6 +324,7 @@ export type Connection = {
   since?: string
   since_unix?: number
   last_ref?: string
+  client_id?: number
   country?: string
   country_code?: string
   region?: string
@@ -342,7 +343,7 @@ export async function fetchConnections(): Promise<{
   return data
 }
 
-export async function killConnection(body: { name: string; real_address?: string }) {
+export async function killConnection(body: { name: string; real_address?: string; client_id?: number }) {
   await api.post('/connections/kill', body)
 }
 

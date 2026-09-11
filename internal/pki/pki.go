@@ -288,6 +288,84 @@ func (s *Store) clientKeyPath(name string) string {
 	return filepath.Join(s.Dir, name+".key")
 }
 
+// ClientsDir is where inline .ovpn profiles are written.
+// /etc/openvpn/easy-rsa/pki → /etc/openvpn/clients; otherwise a sibling/clients folder.
+func ClientsDir(pkiDir string) string {
+	pkiDir = filepath.Clean(pkiDir)
+	if filepath.Base(pkiDir) == "pki" {
+		parent := filepath.Dir(pkiDir)
+		if filepath.Base(parent) == "easy-rsa" {
+			return filepath.Join(filepath.Dir(parent), "clients")
+		}
+		return filepath.Join(parent, "clients")
+	}
+	return filepath.Join(pkiDir, "clients")
+}
+
+func (s *Store) clientsDir() string {
+	return ClientsDir(s.Dir)
+}
+
+func (s *Store) ovpnPath(name string) string {
+	return filepath.Join(s.clientsDir(), name+".ovpn")
+}
+
+func (s *Store) dropOldCertCopies(name string) {
+	old := filepath.Join(s.Dir, "client")
+	_ = os.Remove(filepath.Join(old, name+".crt"))
+	_ = os.Remove(filepath.Join(old, name+".key"))
+}
+
+// WriteOvpn builds the inline profile and writes {clients}/{name}.ovpn.
+func (s *Store) WriteOvpn(name, publicHost string, cfg *ovpn.Config) error {
+	name = strings.TrimSpace(name)
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+	body, err := s.Profile(name, publicHost, cfg)
+	if err != nil {
+		return err
+	}
+	return s.SaveOvpn(name, body)
+}
+
+// SaveOvpn writes an already-built .ovpn into the clients folder.
+func (s *Store) SaveOvpn(name string, body []byte) error {
+	if err := os.MkdirAll(s.clientsDir(), 0o700); err != nil {
+		return err
+	}
+	s.dropOldCertCopies(name)
+	return os.WriteFile(s.ovpnPath(name), body, 0o600)
+}
+
+// RemoveOvpn deletes the on-disk .ovpn copy for name.
+func (s *Store) RemoveOvpn(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	_ = os.Remove(s.ovpnPath(name))
+	s.dropOldCertCopies(name)
+}
+
+// SyncOvpns rewrites .ovpn files for active clients and removes copies of revoked ones.
+func (s *Store) SyncOvpns(publicHost string, cfg *ovpn.Config) {
+	if strings.TrimSpace(publicHost) == "" || cfg == nil {
+		return
+	}
+	clients, err := s.List()
+	if err != nil {
+		return
+	}
+	for _, c := range clients {
+		if c.Revoked || !c.HasKey {
+			s.RemoveOvpn(c.Name)
+			continue
+		}
+		_ = s.WriteOvpn(c.Name, publicHost, cfg)
+	}
+}
+
 func (s *Store) revokedSerials() map[string]bool {
 	out := map[string]bool{}
 	b, err := os.ReadFile(s.crlPath())
@@ -603,6 +681,7 @@ func (s *Store) Revoke(name string) error {
 	//_ = os.Remove(crtPath)  не удалять .crt (easy-rsa так делает)
 	_ = os.Remove(s.clientKeyPath(name))
 	_ = os.Remove(filepath.Join(s.Dir, "reqs", name+".req"))
+	s.RemoveOvpn(name)
 	return nil
 }
 

@@ -96,6 +96,12 @@ func TestIssueRevokeProfile(t *testing.T) {
 			t.Fatalf("profile missing %q:\n%s", want, text)
 		}
 	}
+	if err := s.SaveOvpn("alice", prof); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "clients", "alice.ovpn")); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Revoke("alice"); err != nil {
 		t.Fatal(err)
 	}
@@ -108,6 +114,9 @@ func TestIssueRevokeProfile(t *testing.T) {
 	}
 	if len(list) != 1 || !list[0].Revoked || list[0].HasKey {
 		t.Fatalf("expected revoked cert kept without key, got %+v", list)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "clients", "alice.ovpn")); !os.IsNotExist(err) {
+		t.Fatalf("revoked ovpn copy should be removed: %v", err)
 	}
 }
 
@@ -160,6 +169,50 @@ func TestIssueCyrillic(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].Name != "Сергей" {
 		t.Fatalf("list %+v", list)
+	}
+}
+
+func TestClientsDir(t *testing.T) {
+	if got := ClientsDir("/etc/openvpn/easy-rsa/pki"); got != "/etc/openvpn/clients" {
+		t.Fatalf("default layout: %s", got)
+	}
+	if got := ClientsDir("/tmp/foo/pki"); got != "/tmp/foo/clients" {
+		t.Fatalf("sibling: %s", got)
+	}
+	if got := ClientsDir("/tmp/foo"); got != "/tmp/foo/clients" {
+		t.Fatalf("inside: %s", got)
+	}
+}
+
+func TestWriteOvpnToClientsDir(t *testing.T) {
+	root := t.TempDir()
+	pkiDir := filepath.Join(root, "easy-rsa", "pki")
+	writeTestCA(t, pkiDir)
+	s := &Store{Dir: pkiDir}
+	if err := s.Issue("alice"); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &ovpn.Config{Port: 1194, Proto: "udp", Cipher: "AES-256-GCM", Auth: "SHA256", Dev: "tun"}
+	if err := s.WriteOvpn("alice", "vpn.example.com", cfg); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "clients", "alice.ovpn")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "remote vpn.example.com 1194") {
+		t.Fatalf("%s", body)
+	}
+	s.SyncOvpns("vpn.example.com", cfg)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Revoke("alice"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected ovpn removed: %v", err)
 	}
 }
 

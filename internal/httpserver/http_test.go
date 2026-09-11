@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/mosimosi228/kit/auth"
+	"github.com/mosimosi228/ovpn-dash/internal/ovpn"
 	"github.com/mosimosi228/ovpn-dash/internal/settingsdb"
 )
 
@@ -68,7 +69,9 @@ func newTestHandler(t *testing.T) (*Handler, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Handler{Dir: dir, DB: db, Tokens: tok}, dir
+	mon := ovpn.NewMonitor()
+	t.Cleanup(mon.Close)
+	return &Handler{Dir: dir, DB: db, Tokens: tok, Mon: mon}, dir
 }
 
 func TestSetupGateAndLogin(t *testing.T) {
@@ -415,7 +418,7 @@ func TestReissueThenListClients(t *testing.T) {
 	h, dir := newTestHandler(t)
 	srv := httptest.NewServer(h.Routes())
 	t.Cleanup(srv.Close)
-	tok, _, _ := setupAndToken(t, srv, dir)
+	tok, pkiDir, _ := setupAndToken(t, srv, dir)
 
 	res := authJSON(t, srv, tok, http.MethodPost, "/api/v1/users", map[string]string{
 		"email":       "bob@example.com",
@@ -428,6 +431,12 @@ func TestReissueThenListClients(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	ovpnPath := filepath.Join(filepath.Dir(pkiDir), "clients", "bob.ovpn")
+	if raw, err := os.ReadFile(ovpnPath); err != nil {
+		t.Fatalf("ovpn copy: %v", err)
+	} else if !strings.Contains(string(raw), "remote vpn.example.com") {
+		t.Fatalf("ovpn %s", raw)
 	}
 
 	res = authJSON(t, srv, tok, http.MethodPost, "/api/v1/clients/bob/reissue", nil)

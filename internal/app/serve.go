@@ -18,6 +18,7 @@ import (
 	kitlogger "github.com/mosimosi228/kit/logger"
 	"github.com/mosimosi228/ovpn-dash/internal/geo"
 	"github.com/mosimosi228/ovpn-dash/internal/httpserver"
+	"github.com/mosimosi228/ovpn-dash/internal/ovpn"
 	"github.com/mosimosi228/ovpn-dash/internal/settingsdb"
 	"github.com/mosimosi228/ovpn-dash/internal/setup"
 )
@@ -87,7 +88,9 @@ func Serve(opts ServeOptions) error {
 		Tokens: tokens,
 		Log:    log,
 		Geo:    geo.New(),
+		Mon:    ovpn.NewMonitor(),
 	}
+	defer h.Mon.Close()
 	go h.RunTelegram(opts.BaseCtx)
 	handler := h.Routes()
 

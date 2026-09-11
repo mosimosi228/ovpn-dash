@@ -74,7 +74,7 @@ func TestKillTCP(t *testing.T) {
 			errc <- err
 			return
 		}
-		if strings.TrimSpace(line) != "kill 203.0.113.10:1234" {
+		if strings.TrimSpace(line) != "kill alice" {
 			errc <- fmt.Errorf("cmd %q", line)
 			return
 		}
@@ -101,5 +101,49 @@ func TestKillNoManage(t *testing.T) {
 	cfg := &Config{}
 	if err := cfg.Kill("", "alice"); err == nil || err.Error() != "nomanage" {
 		t.Fatalf("%v", err)
+	}
+}
+
+func TestLiveSessionsTCP(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	errc := make(chan error, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			errc <- err
+			return
+		}
+		defer c.Close()
+		if _, err := fmt.Fprintf(c, ">INFO:OpenVPN Management Interface Version 3\n"); err != nil {
+			errc <- err
+			return
+		}
+		r := bufio.NewReader(c)
+		line, err := r.ReadString('\n')
+		if err != nil {
+			errc <- err
+			return
+		}
+		if strings.TrimSpace(line) != "status 3" {
+			errc <- fmt.Errorf("cmd %q", line)
+			return
+		}
+		_, _ = fmt.Fprintf(c, "TITLE,OpenVPN\nCLIENT_LIST,bob,203.0.113.9:1,10.8.0.9,,11,22,now,1,bob\nEND\n")
+		errc <- nil
+	}()
+	cfg := &Config{ManagementNet: "tcp", ManagementAddr: ln.Addr().String()}
+	ss, err := cfg.LiveSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ss) != 1 || ss[0].Name != "bob" || ss[0].VirtualIP != "10.8.0.9" {
+		t.Fatalf("%+v", ss)
+	}
+	if err := <-errc; err != nil {
+		t.Fatal(err)
 	}
 }
