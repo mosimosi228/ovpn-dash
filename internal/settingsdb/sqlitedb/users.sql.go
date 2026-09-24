@@ -61,7 +61,7 @@ SELECT id, email, name, pass_hash, role, client_name, telegram_chat_id, telegram
 FROM users WHERE email = ? LIMIT 1
 `
 
-func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+func (q *Queries) GetUserByEmail(ctx context.Context, email sql.NullString) (User, error) {
 	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
 	var i User
 	err := row.Scan(
@@ -168,7 +168,7 @@ INSERT INTO users (
 `
 
 type InsertUserParams struct {
-	Email          string         `json:"email"`
+	Email          sql.NullString `json:"email"`
 	Name           string         `json:"name"`
 	PassHash       string         `json:"pass_hash"`
 	Role           string         `json:"role"`
@@ -258,7 +258,7 @@ WHERE id = ?
 `
 
 type UpdateUserParams struct {
-	Email          string         `json:"email"`
+	Email          sql.NullString `json:"email"`
 	Name           string         `json:"name"`
 	PassHash       string         `json:"pass_hash"`
 	Role           string         `json:"role"`

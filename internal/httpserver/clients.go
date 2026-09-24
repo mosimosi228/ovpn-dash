@@ -19,7 +19,7 @@ import (
 
 func (h *Handler) store(r *http.Request) *pki.Store {
 	s := h.loadSettings(r)
-	return &pki.Store{Dir: s.PKIDir}
+	return &pki.Store{Dir: s.PKIDir, Clients: h.ClientsDir}
 }
 
 func (h *Handler) listClients(w http.ResponseWriter, r *http.Request) {

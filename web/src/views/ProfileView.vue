@@ -84,7 +84,7 @@ async function onUnbind() {
         <input v-model="form.name" class="input-field" required />
       </FormField>
       <FormField :label="t('profile.email')">
-        <input v-model="form.email" class="input-field" type="email" required />
+        <input v-model="form.email" class="input-field" type="email" :required="props.me.role !== 'user'" />
       </FormField>
       <FormField :label="t('profile.theme')">
         <select v-model="form.theme" class="input-field">

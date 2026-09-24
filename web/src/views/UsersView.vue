@@ -48,6 +48,17 @@ async function onCreate() {
   }
 }
 
+async function onRole(u: DashUser, ev: Event) {
+  const role = (ev.target as HTMLSelectElement).value
+  if (role === u.role) return
+  try {
+    await patchUser(u.id, { role })
+    await load()
+  } catch {
+    await load()
+  }
+}
+
 async function onToggle(u: DashUser) {
   try {
     await patchUser(u.id, { disabled: !u.disabled })
@@ -74,7 +85,7 @@ async function onDelete(u: DashUser) {
     <h2 class="font-display text-2xl mb-5">{{ t('users.create') }}</h2>
     <form class="form-stack" @submit.prevent="onCreate">
       <FormField :label="t('profile.email')">
-        <input v-model="form.email" class="input-field" type="email" required />
+        <input v-model="form.email" class="input-field" type="email" :required="form.role !== 'user'" />
       </FormField>
       <FormField :label="t('profile.name')">
         <input v-model="form.name" class="input-field" />
@@ -121,7 +132,18 @@ async function onDelete(u: DashUser) {
               <span v-if="u.disabled" class="badge badge-error badge-xs ml-2">{{ t('clients.disabled') }}</span>
             </td>
             <td>{{ u.name }}</td>
-            <td>{{ u.role }}</td>
+            <td>
+              <select
+                v-if="props.me.role === 'root' && u.role !== 'root'"
+                class="select select-xs select-bordered"
+                :value="u.role"
+                @change="onRole(u, $event)"
+              >
+                <option value="user">{{ t('users.user') }}</option>
+                <option value="admin">{{ t('users.admin') }}</option>
+              </select>
+              <span v-else>{{ u.role }}</span>
+            </td>
             <td class="font-mono text-xs">{{ u.client_name }}</td>
             <td class="text-right whitespace-nowrap">
               <button

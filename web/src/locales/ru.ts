@@ -1,8 +1,10 @@
 export default {
   app: { title: 'OVPN Dashboard', subtitle: 'панель OpenVPN' },
   footer: {
-    desc: 'Панель для уже установленного OpenVPN. Порт 7474 наружу не открывайте.',
-    listen: '127.0.0.1:7474',
+    desc: 'Панель для уже установленного OpenVPN.',
+    version: 'версия {version}',
+    update: 'доступна {version}',
+    repo: 'ovpn-dash',
   },
   lang: { ru: 'RU', en: 'EN' },
   boot: {
@@ -35,7 +37,7 @@ export default {
   },
   login: {
     title: 'Вход',
-    email: 'Email или логин',
+    email: 'Email или имя клиента',
     password: 'Пароль',
     submit: 'Войти',
     error: 'Неверный email, логин или пароль',
@@ -87,7 +89,7 @@ export default {
     create: 'Новый клиент',
     list: 'Сертификаты',
     name: 'Имя',
-    email: 'Email',
+    email: 'Email (необязательно)',
     expires: 'Истекает',
     revoked: 'отозван',
     disabled: 'вход выключен',

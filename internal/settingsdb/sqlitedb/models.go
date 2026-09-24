@@ -30,7 +30,7 @@ type RecoveryToken struct {
 
 type User struct {
 	ID             int64          `json:"id"`
-	Email          string         `json:"email"`
+	Email          sql.NullString `json:"email"`
 	Name           string         `json:"name"`
 	PassHash       string         `json:"pass_hash"`
 	Role           string         `json:"role"`

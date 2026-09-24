@@ -30,7 +30,7 @@ type User struct {
 func fromRow(row sqlitedb.User) User {
 	return User{
 		ID:             row.ID,
-		Email:          row.Email,
+		Email:          row.Email.String,
 		Name:           row.Name,
 		PassHash:       row.PassHash,
 		Role:           row.Role,
@@ -68,7 +68,7 @@ func (u User) insertParams() sqlitedb.InsertUserParams {
 		created = now
 	}
 	return sqlitedb.InsertUserParams{
-		Email:          strings.ToLower(strings.TrimSpace(u.Email)),
+		Email:          ns(strings.ToLower(strings.TrimSpace(u.Email))),
 		Name:           strings.TrimSpace(u.Name),
 		PassHash:       u.PassHash,
 		Role:           u.Role,
@@ -94,7 +94,7 @@ func (u User) updateParams() sqlitedb.UpdateUserParams {
 		mapStyle = setup.MapAuto
 	}
 	return sqlitedb.UpdateUserParams{
-		Email:          strings.ToLower(strings.TrimSpace(u.Email)),
+		Email:          ns(strings.ToLower(strings.TrimSpace(u.Email))),
 		Name:           strings.TrimSpace(u.Name),
 		PassHash:       u.PassHash,
 		Role:           u.Role,
@@ -129,14 +129,18 @@ func (d *DB) GetUserByID(ctx context.Context, id int64) (User, error) {
 }
 
 func (d *DB) GetUserByEmail(ctx context.Context, email string) (User, error) {
-	row, err := d.Q.GetUserByEmail(ctx, strings.ToLower(strings.TrimSpace(email)))
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return User{}, sql.ErrNoRows
+	}
+	row, err := d.Q.GetUserByEmail(ctx, sql.NullString{String: email, Valid: true})
 	if err != nil {
 		return User{}, err
 	}
 	return fromRow(row), nil
 }
 
-// FindLogin resolves an email, display name, or v1 username.
+// FindLogin resolves an email, client name (CN), display name, or v1 username.
 func (d *DB) FindLogin(ctx context.Context, ident string) (User, error) {
 	ident = strings.TrimSpace(ident)
 	if ident == "" {
@@ -148,6 +152,11 @@ func (d *DB) FindLogin(ctx context.Context, ident string) (User, error) {
 	users, err := d.ListUsers(ctx)
 	if err != nil {
 		return User{}, err
+	}
+	if u, ok := uniqueUser(users, func(u User) bool {
+		return u.ClientName != "" && strings.EqualFold(u.ClientName, ident)
+	}); ok {
+		return u, nil
 	}
 	if u, ok := uniqueUser(users, func(u User) bool {
 		return strings.EqualFold(u.Name, ident)

@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -40,6 +41,13 @@ type Handler struct {
 	MailSend func(cfg mailer.Config, to, subject, body string) error
 	TGSend   func(token, chatID, text string) error
 	Mon      *ovpn.Monitor
+	Version  string
+	// ClientsDir overrides the .ovpn folder. Empty uses /etc/openvpn/server/client.
+	ClientsDir string
+
+	relMu  sync.Mutex
+	relAt  time.Time
+	relTag string
 }
 
 type ctxKey int
@@ -68,6 +76,7 @@ func (h *Handler) Routes() http.Handler {
 		r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]string{"ok": "1"})
 		})
+		r.Get("/api/v1/version", h.appVersion)
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/dashboard/", http.StatusFound)
 		})

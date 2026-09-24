@@ -1,8 +1,10 @@
 export default {
   app: { title: 'OVPN Dashboard', subtitle: 'OpenVPN panel' },
   footer: {
-    desc: 'A panel for an already installed OpenVPN server. Do not expose port 7474.',
-    listen: '127.0.0.1:7474',
+    desc: 'A panel for an already installed OpenVPN server.',
+    version: 'version {version}',
+    update: '{version} is available',
+    repo: 'ovpn-dash',
   },
   lang: { ru: 'RU', en: 'EN' },
   boot: {
@@ -35,7 +37,7 @@ export default {
   },
   login: {
     title: 'Sign in',
-    email: 'Email or username',
+    email: 'Email or client name',
     password: 'Password',
     submit: 'Sign in',
     error: 'Invalid email, username or password',
@@ -87,7 +89,7 @@ export default {
     create: 'New client',
     list: 'Certificates',
     name: 'Name',
-    email: 'Email',
+    email: 'Email (optional)',
     expires: 'Expires',
     revoked: 'revoked',
     disabled: 'login disabled',

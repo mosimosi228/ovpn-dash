@@ -7,6 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -287,4 +290,94 @@ func extractPIN(s string) string {
 		}
 	}
 	return ""
+}
+
+func TestClientWithoutEmailAndAdminKeepsCert(t *testing.T) {
+	h, dir := newTestHandler(t)
+	srv := httptest.NewServer(h.Routes())
+	t.Cleanup(srv.Close)
+	rootTok, pkiDir, _ := setupAndToken(t, srv, dir)
+
+	res := authJSON(t, srv, rootTok, http.MethodPost, "/api/v1/users", map[string]string{
+		"name":        "Carol",
+		"password":    "carolpass",
+		"role":        "user",
+		"client_name": "carol",
+	})
+	raw, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	if _, err := os.Stat(filepath.Join(pkiDir, "issued", "carol.crt")); err != nil {
+		t.Fatal(err)
+	}
+	loginBody, _ := json.Marshal(map[string]string{"username": "carol", "password": "carolpass"})
+	res, err := http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(loginBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("login by client name %d", res.StatusCode)
+	}
+
+	res = authJSON(t, srv, rootTok, http.MethodPost, "/api/v1/users", map[string]string{
+		"email":       "dave@example.com",
+		"name":        "Dave",
+		"password":    "davepass1",
+		"role":        "user",
+		"client_name": "dave",
+	})
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatal(res.StatusCode)
+	}
+	res = authJSON(t, srv, rootTok, http.MethodPost, "/api/v1/users", map[string]string{
+		"email":       "dave@example.com",
+		"name":        "Dave Two",
+		"password":    "davepass1",
+		"role":        "user",
+		"client_name": "dave2",
+	})
+	raw, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode == http.StatusCreated {
+		t.Fatalf("duplicate email created a user: %s", raw)
+	}
+	if _, err := os.Stat(filepath.Join(pkiDir, "issued", "dave2.crt")); !os.IsNotExist(err) {
+		t.Fatalf("duplicate email still issued a cert: %v", err)
+	}
+
+	res = authJSON(t, srv, rootTok, http.MethodGet, "/api/v1/users", nil)
+	raw, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	var list struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		t.Fatal(err)
+	}
+	var id float64
+	for _, it := range list.Items {
+		if it["client_name"] == "dave" {
+			id, _ = it["id"].(float64)
+		}
+	}
+	if id == 0 {
+		t.Fatalf("dave missing: %s", raw)
+	}
+	res = authJSON(t, srv, rootTok, http.MethodPatch, "/api/v1/users/"+strconv.FormatInt(int64(id), 10), map[string]string{"role": "admin"})
+	raw, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("promote %d %s", res.StatusCode, raw)
+	}
+	var promoted map[string]any
+	if err := json.Unmarshal(raw, &promoted); err != nil {
+		t.Fatal(err)
+	}
+	if promoted["role"] != "admin" || promoted["client_name"] != "dave" {
+		t.Fatalf("%s", raw)
+	}
 }

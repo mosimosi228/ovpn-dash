@@ -23,13 +23,16 @@ import (
 	"unicode/utf8"
 
 	"github.com/mosimosi228/ovpn-dash/internal/ovpn"
+	"github.com/mosimosi228/ovpn-dash/internal/setup"
 )
 
 const clientCertDays = 825
 
 // Store talks to an existing easy-rsa-style PKI on disk.
+// Clients overrides the .ovpn directory; empty uses setup.DefaultClientsDir.
 type Store struct {
-	Dir string
+	Dir     string
+	Clients string
 }
 
 type Client struct {
@@ -288,22 +291,12 @@ func (s *Store) clientKeyPath(name string) string {
 	return filepath.Join(s.Dir, name+".key")
 }
 
-// ClientsDir is where inline .ovpn profiles are written.
-// /etc/openvpn/easy-rsa/pki → /etc/openvpn/clients; otherwise a sibling/clients folder.
-func ClientsDir(pkiDir string) string {
-	pkiDir = filepath.Clean(pkiDir)
-	if filepath.Base(pkiDir) == "pki" {
-		parent := filepath.Dir(pkiDir)
-		if filepath.Base(parent) == "easy-rsa" {
-			return filepath.Join(filepath.Dir(parent), "clients")
-		}
-		return filepath.Join(parent, "clients")
-	}
-	return filepath.Join(pkiDir, "clients")
-}
-
+// clientsDir is where inline .ovpn profiles are written.
 func (s *Store) clientsDir() string {
-	return ClientsDir(s.Dir)
+	if s != nil && strings.TrimSpace(s.Clients) != "" {
+		return s.Clients
+	}
+	return setup.DefaultClientsDir
 }
 
 func (s *Store) ovpnPath(name string) string {
@@ -346,6 +339,20 @@ func (s *Store) RemoveOvpn(name string) {
 	}
 	_ = os.Remove(s.ovpnPath(name))
 	s.dropOldCertCopies(name)
+}
+
+// Discard removes a just-issued cert without putting it on the CRL.
+// Used when account creation fails after Issue.
+func (s *Store) Discard(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	_ = os.Remove(filepath.Join(s.issuedDir(), name+".crt"))
+	_ = os.Remove(filepath.Join(s.privateDir(), name+".key"))
+	_ = os.Remove(filepath.Join(s.Dir, name+".crt"))
+	_ = os.Remove(filepath.Join(s.Dir, name+".key"))
+	s.RemoveOvpn(name)
 }
 
 // SyncOvpns rewrites .ovpn files for active clients and removes copies of revoked ones.

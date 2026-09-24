@@ -44,6 +44,7 @@ export function clearTokens() {
 function shouldFlash(err: { config?: { url?: string } }): boolean {
   const url = err.config?.url || ''
   if (url.includes('/dashboard/api/state') || url === '/state' || url.endsWith('/api/state')) return false
+  if (url.includes('/version')) return false
   return true
 }
 
@@ -104,6 +105,11 @@ api.interceptors.response.use(
     return Promise.reject(err)
   },
 )
+
+export async function fetchVersion(): Promise<{ version: string; update?: string; repo?: string }> {
+  const { data } = await axios.get('/api/v1/version')
+  return data
+}
 
 export async function login(email: string, password: string) {
   try {

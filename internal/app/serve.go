@@ -27,6 +27,7 @@ import (
 type ServeOptions struct {
 	Dir     string
 	Listen  string
+	Version string
 	BaseCtx context.Context
 }
 
@@ -66,6 +67,9 @@ func Serve(opts ServeOptions) error {
 		hint = hint[:8] + "…"
 	}
 	log.Info("data dir ready", slog.String("dir", opts.Dir), slog.String("setup_token_hint", hint))
+	if err := os.MkdirAll(setup.DefaultClientsDir, 0o700); err != nil {
+		log.Warn("clients dir", slog.String("path", setup.DefaultClientsDir), slog.String("err", err.Error()))
+	}
 
 	db, err := settingsdb.Open(opts.Dir)
 	if err != nil {
@@ -83,12 +87,13 @@ func Serve(opts ServeOptions) error {
 	}
 
 	h := &httpserver.Handler{
-		Dir:    opts.Dir,
-		DB:     db,
-		Tokens: tokens,
-		Log:    log,
-		Geo:    geo.New(),
-		Mon:    ovpn.NewMonitor(),
+		Dir:     opts.Dir,
+		DB:      db,
+		Tokens:  tokens,
+		Log:     log,
+		Geo:     geo.New(),
+		Mon:     ovpn.NewMonitor(),
+		Version: opts.Version,
 	}
 	defer h.Mon.Close()
 	go h.RunTelegram(opts.BaseCtx)

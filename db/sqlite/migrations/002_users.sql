@@ -1,7 +1,7 @@
 -- Multi-user accounts (SQLCipher).
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  email TEXT NOT NULL UNIQUE,
+  email TEXT UNIQUE,
   name TEXT NOT NULL,
   pass_hash TEXT NOT NULL,
   role TEXT NOT NULL,

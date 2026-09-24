@@ -28,7 +28,7 @@ const (
 // Live OpenVPN layout on this host (easy-rsa + openvpn-server@server).
 const (
 	DefaultPKIDir     = "/etc/openvpn/easy-rsa/pki"
-	DefaultClientsDir = "/etc/openvpn/clients"
+	DefaultClientsDir = "/etc/openvpn/server/client"
 	DefaultServerConf = "/etc/openvpn/server/server.conf"
 	DefaultUnit       = "openvpn-server@server"
 	DefaultLogFile    = "/var/log/openvpn/server.log"

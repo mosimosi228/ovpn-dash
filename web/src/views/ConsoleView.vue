@@ -218,7 +218,7 @@ async function onStop() {
   }
 }
 async function onCreate() {
-  if (!newEmail.value.trim() || !newPassword.value) return
+  if (!newName.value.trim() || !newPassword.value) return
   try {
     await createClient({
       email: newEmail.value.trim(),
@@ -399,10 +399,10 @@ async function onDisconnect(c: Connection) {
 
         <form class="form-stack" @submit.prevent="onCreate">
           <FormField :label="t('clients.email')">
-            <input v-model="newEmail" class="input-field" type="email" required />
+            <input v-model="newEmail" class="input-field" type="email" />
           </FormField>
           <FormField :label="t('clients.name')">
-            <input v-model="newName" class="input-field" :placeholder="t('clients.placeholder')" />
+            <input v-model="newName" class="input-field" :placeholder="t('clients.placeholder')" required />
           </FormField>
           <FormField :label="t('clients.password')">
             <input v-model="newPassword" class="input-field" type="password" minlength="8" required />

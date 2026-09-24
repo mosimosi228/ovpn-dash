@@ -83,13 +83,13 @@ func (h *Handler) serverLog(w http.ResponseWriter, r *http.Request) {
 	if path != "" {
 		text, err := tailFile(path, n)
 		if err == nil {
-			writeJSON(w, http.StatusOK, map[string]any{"path": path, "text": text, "source": "file"})
+			writeJSON(w, http.StatusOK, map[string]any{"path": path, "text": filterHumanLog(text), "source": "file"})
 			return
 		}
 		if !os.IsNotExist(err) {
-			if j, jerr := systemd.UnitLog(s.Unit, n); jerr == nil && j != "" {
+			if j, jerr := systemd.UnitLog(s.Unit, journalLines(n)); jerr == nil && j != "" {
 				writeJSON(w, http.StatusOK, map[string]any{
-					"path": path, "text": j, "source": "journal", "hint": err.Error(),
+					"path": path, "text": clipLines(filterHumanLog(j), n), "source": "journal", "hint": err.Error(),
 				})
 				return
 			}
@@ -101,9 +101,9 @@ func (h *Handler) serverLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.Unit != "" {
-		if j, err := systemd.UnitLog(s.Unit, n); err == nil && j != "" {
+		if j, err := systemd.UnitLog(s.Unit, journalLines(n)); err == nil && j != "" {
 			writeJSON(w, http.StatusOK, map[string]any{
-				"path": s.Unit, "text": j, "source": "journal",
+				"path": s.Unit, "text": clipLines(filterHumanLog(j), n), "source": "journal",
 			})
 			return
 		}
@@ -142,7 +142,7 @@ func tailFile(path string, lines int) (string, error) {
 		return "", err
 	}
 	all := string(b)
-	parts := splitLines(all)
+	parts := splitLines(filterHumanLog(all))
 	if len(parts) > lines {
 		parts = parts[len(parts)-lines:]
 	}
@@ -154,6 +154,52 @@ func tailFile(path string, lines int) (string, error) {
 		out += p
 	}
 	return out, nil
+}
+
+func clipLines(text string, n int) string {
+	parts := splitLines(text)
+	if n > 0 && len(parts) > n {
+		parts = parts[len(parts)-n:]
+	}
+	return strings.Join(parts, "\n")
+}
+
+func journalLines(n int) int {
+	n *= 5
+	if n > 2000 {
+		return 2000
+	}
+	if n < 1 {
+		return 200
+	}
+	return n
+}
+
+// filterHumanLog drops OpenVPN management chatter from status/bytecount polls.
+func filterHumanLog(text string) string {
+	lines := splitLines(text)
+	if len(lines) == 0 {
+		return ""
+	}
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if managementNoise(line) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
+func managementNoise(line string) bool {
+	u := strings.ToUpper(line)
+	if strings.Contains(u, "MANAGEMENT: CMD 'STATUS") || strings.Contains(u, "MANAGEMENT: CMD 'BYTECOUNT") {
+		return true
+	}
+	if strings.Contains(u, "SUCCESS:") && (strings.Contains(u, "BYTECOUNT") || strings.Contains(u, "STATUS")) {
+		return true
+	}
+	return false
 }
 
 func splitLines(s string) []string {

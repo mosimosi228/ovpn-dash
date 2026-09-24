@@ -71,7 +71,13 @@ func newTestHandler(t *testing.T) (*Handler, string) {
 	}
 	mon := ovpn.NewMonitor()
 	t.Cleanup(mon.Close)
-	return &Handler{Dir: dir, DB: db, Tokens: tok, Mon: mon}, dir
+	return &Handler{
+		Dir:        dir,
+		DB:         db,
+		Tokens:     tok,
+		Mon:        mon,
+		ClientsDir: filepath.Join(dir, "server", "client"),
+	}, dir
 }
 
 func TestSetupGateAndLogin(t *testing.T) {
@@ -418,7 +424,7 @@ func TestReissueThenListClients(t *testing.T) {
 	h, dir := newTestHandler(t)
 	srv := httptest.NewServer(h.Routes())
 	t.Cleanup(srv.Close)
-	tok, pkiDir, _ := setupAndToken(t, srv, dir)
+	tok, _, _ := setupAndToken(t, srv, dir)
 
 	res := authJSON(t, srv, tok, http.MethodPost, "/api/v1/users", map[string]string{
 		"email":       "bob@example.com",
@@ -432,7 +438,7 @@ func TestReissueThenListClients(t *testing.T) {
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("create %d %s", res.StatusCode, raw)
 	}
-	ovpnPath := filepath.Join(filepath.Dir(pkiDir), "clients", "bob.ovpn")
+	ovpnPath := filepath.Join(dir, "server", "client", "bob.ovpn")
 	if raw, err := os.ReadFile(ovpnPath); err != nil {
 		t.Fatalf("ovpn copy: %v", err)
 	} else if !strings.Contains(string(raw), "remote vpn.example.com") {

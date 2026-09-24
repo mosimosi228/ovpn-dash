@@ -69,21 +69,16 @@ const itemClass = (id: DashTab) => (props.tab === id ? 'nav-active' : '')
               </a>
             </li>
             <li>
-              <a class="gap-2" :href="urlForTab('settings')" :class="itemClass('settings')" @click.prevent="go('settings')">
-                <Cog6ToothIcon class="size-4 shrink-0" />{{ t('nav.settings') }}
-              </a>
-            </li>
-            <li>
               <a class="gap-2" :href="urlForTab('users')" :class="itemClass('users')" @click.prevent="go('users')">
                 <UserGroupIcon class="size-4 shrink-0" />{{ t('nav.users') }}
               </a>
             </li>
+            <li>
+              <a class="gap-2" :href="urlForTab('settings')" :class="itemClass('settings')" @click.prevent="go('settings')">
+                <Cog6ToothIcon class="size-4 shrink-0" />{{ t('nav.settings') }}
+              </a>
+            </li>
           </template>
-          <li>
-            <a class="gap-2" :href="urlForTab('profile')" :class="itemClass('profile')" @click.prevent="go('profile')">
-              <UserCircleIcon class="size-4 shrink-0" />{{ t('nav.profile') }}
-            </a>
-          </li>
         </ul>
       </nav>
 
@@ -91,6 +86,15 @@ const itemClass = (id: DashTab) => (props.tab === id ? 'nav-active' : '')
         <button class="btn btn-ghost btn-sm font-mono" type="button" @click="toggleLang">
           {{ locale === 'ru' ? t('lang.en') : t('lang.ru') }}
         </button>
+        <a
+          class="btn btn-ghost btn-sm gap-2 hidden lg:inline-flex"
+          :class="itemClass('profile')"
+          :href="urlForTab('profile')"
+          @click.prevent="go('profile')"
+        >
+          <UserCircleIcon class="size-4 shrink-0" />
+          {{ t('nav.profile') }}
+        </a>
         <button class="btn btn-ghost btn-sm gap-2 hidden lg:inline-flex" type="button" @click="emit('logout')">
           <ArrowRightOnRectangleIcon class="size-4 shrink-0" />
           {{ t('nav.logout') }}
@@ -132,13 +136,13 @@ const itemClass = (id: DashTab) => (props.tab === id ? 'nav-active' : '')
                 </a>
               </li>
               <li>
-                <a class="gap-2" :href="urlForTab('settings')" :class="itemClass('settings')" @click.prevent="go('settings')">
-                  <Cog6ToothIcon class="size-4" />{{ t('nav.settings') }}
+                <a class="gap-2" :href="urlForTab('users')" :class="itemClass('users')" @click.prevent="go('users')">
+                  <UserGroupIcon class="size-4" />{{ t('nav.users') }}
                 </a>
               </li>
               <li>
-                <a class="gap-2" :href="urlForTab('users')" :class="itemClass('users')" @click.prevent="go('users')">
-                  <UserGroupIcon class="size-4" />{{ t('nav.users') }}
+                <a class="gap-2" :href="urlForTab('settings')" :class="itemClass('settings')" @click.prevent="go('settings')">
+                  <Cog6ToothIcon class="size-4" />{{ t('nav.settings') }}
                 </a>
               </li>
             </template>

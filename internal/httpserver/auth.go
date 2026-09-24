@@ -30,12 +30,12 @@ type refreshReq struct {
 }
 
 type patchMeReq struct {
-	Name            string `json:"name"`
-	Email           string `json:"email"`
-	CurrentPassword string `json:"current_password"`
-	Password        string `json:"password"`
-	Theme           string `json:"theme"`
-	MapStyle        string `json:"map_style"`
+	Name            string  `json:"name"`
+	Email           *string `json:"email"`
+	CurrentPassword string  `json:"current_password"`
+	Password        string  `json:"password"`
+	Theme           string  `json:"theme"`
+	MapStyle        string  `json:"map_style"`
 }
 
 type emailReq struct {
@@ -342,19 +342,26 @@ func (h *Handler) patchMe(w http.ResponseWriter, r *http.Request) {
 	if req.Name != "" {
 		u.Name = strings.TrimSpace(req.Name)
 	}
-	if req.Email != "" {
-		email := normalizeEmail(req.Email)
-		if !validEmail(email) {
+	if req.Email != nil {
+		email := normalizeEmail(*req.Email)
+		if email == "" {
+			if u.Role != setup.RoleUser {
+				writeError(w, http.StatusBadRequest, "email is required")
+				return
+			}
+			u.Email = ""
+		} else if !validEmail(email) {
 			writeError(w, http.StatusBadRequest, "invalid email")
 			return
-		}
-		if email != u.Email {
+		} else if email != u.Email {
 			if other, err := h.DB.GetUserByEmail(r.Context(), email); err == nil && other.ID != u.ID {
 				writeError(w, http.StatusConflict, "email already in use")
 				return
 			}
+			u.Email = email
+		} else {
+			u.Email = email
 		}
-		u.Email = email
 	}
 	if req.Theme != "" {
 		if req.Theme != setup.ThemeLight && req.Theme != setup.ThemeDark {

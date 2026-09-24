@@ -65,7 +65,7 @@ func migrate(db *sql.DB) error {
 );`,
 		`CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  email TEXT NOT NULL UNIQUE,
+  email TEXT UNIQUE,
   name TEXT NOT NULL,
   pass_hash TEXT NOT NULL,
   role TEXT NOT NULL,
@@ -97,7 +97,73 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
-	return nil
+	return migrateEmailOptional(db)
+}
+
+func migrateEmailOptional(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(users)`)
+	if err != nil {
+		return err
+	}
+	notnull := -1
+	for rows.Next() {
+		var cid, nn, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &nn, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "email" {
+			notnull = nn
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if notnull != 1 {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	steps := []string{
+		`CREATE TABLE users_email_opt (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT UNIQUE,
+  name TEXT NOT NULL,
+  pass_hash TEXT NOT NULL,
+  role TEXT NOT NULL,
+  client_name TEXT UNIQUE,
+  telegram_chat_id TEXT,
+  telegram_bind TEXT,
+  theme TEXT NOT NULL DEFAULT 'light',
+  map_style TEXT NOT NULL DEFAULT 'auto',
+  disabled INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);`,
+		`INSERT INTO users_email_opt (
+  id, email, name, pass_hash, role, client_name, telegram_chat_id, telegram_bind,
+  theme, map_style, disabled, created_at, updated_at
+)
+SELECT
+  id, NULLIF(email, ''), name, pass_hash, role, client_name, telegram_chat_id, telegram_bind,
+  theme, map_style, disabled, created_at, updated_at
+FROM users;`,
+		`DROP TABLE users;`,
+		`ALTER TABLE users_email_opt RENAME TO users;`,
+	}
+	for _, s := range steps {
+		if _, err := tx.Exec(s); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func loadOrCreateKey(dir string) (string, error) {

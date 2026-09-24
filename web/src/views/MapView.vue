@@ -9,6 +9,17 @@ const el = ref<HTMLElement | null>(null)
 let map: L.Map | null = null
 let layer: L.LayerGroup | null = null
 let tilesLayer: L.TileLayer | null = null
+let userMoved = false
+let fitting = false
+let lastSig = ''
+
+function pointSig(items: Connection[]) {
+  return items
+    .filter((c) => c.lat || c.lon)
+    .map((c) => `${c.name}:${c.lat}:${c.lon}`)
+    .sort()
+    .join('|')
+}
 
 function plot() {
   if (!layer) return
@@ -28,8 +39,13 @@ function plot() {
     marker.addTo(layer)
     pts.push([c.lat, c.lon])
   }
-  if (pts.length && map) {
+  const sig = pointSig(props.items)
+  const changed = sig !== lastSig
+  lastSig = sig
+  if (changed && !userMoved && pts.length && map) {
+    fitting = true
     map.fitBounds(L.latLngBounds(pts).pad(0.35), { maxZoom: 6 })
+    fitting = false
   }
 }
 
@@ -45,6 +61,12 @@ function setTiles() {
 onMounted(() => {
   if (!el.value) return
   map = L.map(el.value, { worldCopyJump: true, zoomControl: true }).setView([25, 20], 2)
+  map.on('zoomstart', () => {
+    if (!fitting) userMoved = true
+  })
+  map.on('dragstart', () => {
+    userMoved = true
+  })
   setTiles()
   layer = L.layerGroup().addTo(map)
   plot()
@@ -62,6 +84,8 @@ onBeforeUnmount(() => {
   map = null
   layer = null
   tilesLayer = null
+  userMoved = false
+  lastSig = ''
 })
 </script>
 

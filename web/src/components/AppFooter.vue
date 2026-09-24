@@ -1,10 +1,24 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { fetchVersion } from '@/api/client'
 
 const { t } = useI18n()
 const year = computed(() => new Date().getFullYear())
 const favicon = `${import.meta.env.BASE_URL}favicon.svg`
+const version = ref('')
+const update = ref('')
+const repo = ref('https://github.com/mosimosi228/ovpn-dash')
+
+onMounted(() => {
+  fetchVersion()
+    .then((v) => {
+      version.value = v.version || ''
+      update.value = v.update || ''
+      if (v.repo) repo.value = v.repo
+    })
+    .catch(() => {})
+})
 </script>
 
 <template>
@@ -18,16 +32,26 @@ const favicon = `${import.meta.env.BASE_URL}favicon.svg`
         </div>
         <p class="text-xs text-base-content/50 mt-1 max-w-md">{{ t('footer.desc') }}</p>
         <a
-          class="inline-block text-xs font-mono text-primary/80 hover:text-primary mt-2"
-          href="https://github.com/mosimosi228/ovpn-dash"
+          class="inline-flex items-center gap-1.5 text-xs text-primary/80 hover:text-primary mt-2"
+          :href="repo"
           target="_blank"
           rel="noopener noreferrer"
         >
-          github.com/mosimosi228/ovpn-dash
+          <span class="size-1.5 rounded-full bg-primary/70" />
+          {{ t('footer.repo') }}
         </a>
       </div>
-      <div class="text-xs text-base-content/45 font-mono text-center sm:text-right">
-        <div>{{ t('footer.listen') }}</div>
+      <div class="text-xs text-base-content/45 text-center sm:text-right">
+        <div v-if="version">{{ t('footer.version', { version }) }}</div>
+        <a
+          v-if="update"
+          class="mt-1 block text-primary/80 hover:text-primary"
+          :href="repo"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {{ t('footer.update', { version: update }) }}
+        </a>
         <div class="mt-1">© {{ year }}</div>
       </div>
     </div>

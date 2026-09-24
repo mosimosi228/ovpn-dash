@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mosimosi228/ovpn-dash/internal/ovpn"
+	"github.com/mosimosi228/ovpn-dash/internal/setup"
 )
 
 func writeTestCA(t *testing.T, dir string) {
@@ -59,7 +60,7 @@ func writeTestCAUsage(t *testing.T, dir string, usage x509.KeyUsage) {
 func TestIssueRevokeProfile(t *testing.T) {
 	dir := t.TempDir()
 	writeTestCA(t, dir)
-	s := &Store{Dir: dir}
+	s := &Store{Dir: dir, Clients: filepath.Join(dir, "clients")}
 	if err := s.Issue("alice"); err != nil {
 		t.Fatal(err)
 	}
@@ -173,14 +174,13 @@ func TestIssueCyrillic(t *testing.T) {
 }
 
 func TestClientsDir(t *testing.T) {
-	if got := ClientsDir("/etc/openvpn/easy-rsa/pki"); got != "/etc/openvpn/clients" {
-		t.Fatalf("default layout: %s", got)
+	s := &Store{}
+	if s.clientsDir() != setup.DefaultClientsDir {
+		t.Fatalf("default: %s", s.clientsDir())
 	}
-	if got := ClientsDir("/tmp/foo/pki"); got != "/tmp/foo/clients" {
-		t.Fatalf("sibling: %s", got)
-	}
-	if got := ClientsDir("/tmp/foo"); got != "/tmp/foo/clients" {
-		t.Fatalf("inside: %s", got)
+	s.Clients = "/tmp/ovpn-client"
+	if s.clientsDir() != "/tmp/ovpn-client" {
+		t.Fatalf("override: %s", s.clientsDir())
 	}
 }
 
@@ -188,7 +188,8 @@ func TestWriteOvpnToClientsDir(t *testing.T) {
 	root := t.TempDir()
 	pkiDir := filepath.Join(root, "easy-rsa", "pki")
 	writeTestCA(t, pkiDir)
-	s := &Store{Dir: pkiDir}
+	clients := filepath.Join(root, "server", "client")
+	s := &Store{Dir: pkiDir, Clients: clients}
 	if err := s.Issue("alice"); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +197,7 @@ func TestWriteOvpnToClientsDir(t *testing.T) {
 	if err := s.WriteOvpn("alice", "vpn.example.com", cfg); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(root, "clients", "alice.ovpn")
+	path := filepath.Join(clients, "alice.ovpn")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

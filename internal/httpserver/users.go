@@ -113,17 +113,24 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Email != nil {
 		email := normalizeEmail(*req.Email)
-		if !validEmail(email) {
-			writeError(w, http.StatusBadRequest, "invalid email")
-			return
-		}
-		if email != u.Email {
-			if other, err := h.DB.GetUserByEmail(r.Context(), email); err == nil && other.ID != u.ID {
-				writeError(w, http.StatusConflict, "email already in use")
+		if email == "" {
+			if u.Role != setup.RoleUser {
+				writeError(w, http.StatusBadRequest, "email is required")
 				return
 			}
+			u.Email = ""
+		} else if !validEmail(email) {
+			writeError(w, http.StatusBadRequest, "invalid email")
+			return
+		} else {
+			if email != u.Email {
+				if other, err := h.DB.GetUserByEmail(r.Context(), email); err == nil && other.ID != u.ID {
+					writeError(w, http.StatusConflict, "email already in use")
+					return
+				}
+			}
+			u.Email = email
 		}
-		u.Email = email
 	}
 	if req.Role != nil {
 		if actor.Role != setup.RoleRoot {
@@ -143,13 +150,14 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "demote to user requires an existing client certificate")
 			return
 		}
-		if role == setup.RoleAdmin {
-			u.ClientName = ""
-		}
 		u.Role = role
 	}
 	if req.Disabled != nil {
 		u.Disabled = *req.Disabled
+	}
+	if u.Role != setup.RoleUser && strings.TrimSpace(u.Email) == "" {
+		writeError(w, http.StatusBadRequest, "email is required")
+		return
 	}
 	if err := h.DB.UpdateUser(r.Context(), u); err != nil {
 		writeError(w, http.StatusInternalServerError, "save error")
@@ -207,18 +215,30 @@ func canManage(actor, target settingsdb.User) bool {
 
 func (h *Handler) insertAccount(r *http.Request, email, name, password, role, clientName string) (settingsdb.User, error) {
 	email = normalizeEmail(email)
-	if !validEmail(email) {
-		return settingsdb.User{}, errMsg("email is required")
+	if role != setup.RoleUser {
+		if !validEmail(email) {
+			return settingsdb.User{}, errMsg("email is required")
+		}
+	} else if email != "" && !validEmail(email) {
+		return settingsdb.User{}, errMsg("invalid email")
 	}
 	if len(password) < 8 {
 		return settingsdb.User{}, errMsg("password must be at least 8 characters")
 	}
 	name = strings.TrimSpace(name)
-	if name == "" {
+	if name == "" && email != "" {
 		name = strings.Split(email, "@")[0]
 	}
-	if _, err := h.DB.GetUserByEmail(r.Context(), email); err == nil {
-		return settingsdb.User{}, errMsg("email already in use")
+	if name == "" {
+		name = strings.TrimSpace(clientName)
+	}
+	if name == "" {
+		return settingsdb.User{}, errMsg("name is required")
+	}
+	if email != "" {
+		if _, err := h.DB.GetUserByEmail(r.Context(), email); err == nil {
+			return settingsdb.User{}, errMsg("email already in use")
+		}
 	}
 	hash, err := auth.HashPassword(password)
 	if err != nil {
@@ -249,16 +269,17 @@ func (h *Handler) createUserWithCert(r *http.Request, email, name, password, cli
 	if _, err := h.DB.GetUserByClientName(r.Context(), cn); err == nil {
 		return settingsdb.User{}, errMsg("client already has a dashboard user")
 	}
+	u, err := h.insertAccount(r, email, name, password, setup.RoleUser, cn)
+	if err != nil {
+		return settingsdb.User{}, err
+	}
 	if err := h.store(r).Issue(cn); err != nil {
+		_ = h.DB.DeleteUser(r.Context(), u.ID)
 		return settingsdb.User{}, err
 	}
 	if err := h.writeClientOvpn(r, cn); err != nil {
-		_ = h.store(r).Revoke(cn)
-		return settingsdb.User{}, err
-	}
-	u, err := h.insertAccount(r, email, name, password, setup.RoleUser, cn)
-	if err != nil {
-		_ = h.store(r).Revoke(cn)
+		h.store(r).Discard(cn)
+		_ = h.DB.DeleteUser(r.Context(), u.ID)
 		return settingsdb.User{}, err
 	}
 	return u, nil

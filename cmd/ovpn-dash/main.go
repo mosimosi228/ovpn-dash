@@ -45,7 +45,7 @@ func newServeCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Start ovpn-dash (setup wizard on /dashboard)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return app.Serve(app.ServeOptions{Dir: dir, Listen: listen})
+			return app.Serve(app.ServeOptions{Dir: dir, Listen: listen, Version: version})
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", envOr("OVPNDASH_DIR", "./ovpn-dash-data"), "data directory")
